@@ -1,0 +1,6 @@
+{
+  "name": "မြန်မာ ဗီဒီယိုစာတန်းထိုး ဘာသာပြန်အက်ပ် (Subtitle AI Translator)",
+  "description": "SRT & VTT Subtitle AI Translator into Myanmar (Burmese) with Gemini AI, video sync preview, timing adjustments, custom glossaries, and dual subtitle export.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

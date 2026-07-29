@@ -194,7 +194,7 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
               <div className="flex items-center justify-between">
                 <label className="text-xs font-bold text-slate-200 flex items-center space-x-1.5">
                   <Key className="w-4 h-4 text-amber-400" />
-                  <span>မိမိပိုင် Gemini API Key ထည့်သွင်းရန် (Optional):</span>
+                  <span>မိမိပိုင် Gemini API Key (Free API Key သုံးနိုင်ပါသည်):</span>
                 </label>
                 <button
                   type="button"
@@ -213,6 +213,9 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
                 placeholder="AI Studio Gemini Key ထည့်ပါ (မထည့်ပါက Server Key သုံးမည်)..."
                 className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-100 focus:outline-none focus:border-emerald-500"
               />
+              <p className="text-[11px] text-slate-400 leading-normal">
+                💡 <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-emerald-400 underline font-semibold">aistudio.google.com</a> မှ အခမဲ့ (Free API Key) ရယူအသုံးပြုနိုင်ပါသည်။ Free API Key သုံးပါက Rate Limit မမိစေရန် အက်ပ်မှ အလိုအလျောက် ချိန်ညှိ ဘာသာပြန်ပေးမည် ဖြစ်ပါသည်။
+              </p>
             </div>
           </div>
         )}

@@ -383,8 +383,15 @@ ${JSON.stringify(items.map((i: any) => ({ id: i.id, text: i.text })))}`;
     let success = false;
     let lastError: any = null;
 
-    // Supported model fallback order
-    const modelsToTry = ['gemini-3.6-flash', 'gemini-flash-latest', 'gemini-2.5-flash', 'gemini-2.5-pro'];
+    // Supported model fallback order for Free and Paid Gemini keys
+    const modelsToTry = [
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+      'gemini-1.5-flash',
+      'gemini-2.5-flash-lite',
+      'gemini-3.6-flash',
+      'gemini-flash-latest',
+    ];
 
     let pass = 0;
     const maxPasses = 3;

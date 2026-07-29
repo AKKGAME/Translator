@@ -152,7 +152,7 @@ export default function App() {
     isCancelledRef.current = false;
     setIsTranslating(true);
 
-    const batchSize = translationSettings.batchSize || 25;
+    const batchSize = translationSettings.batchSize || 30;
     const itemsToTranslate = onlyPendingOrError
       ? items.filter((i) => i.status !== 'completed' || !i.translatedText)
       : [...items];
@@ -178,7 +178,7 @@ export default function App() {
 
       let success = false;
       let attempt = 0;
-      const maxAttempts = 5;
+      const maxAttempts = 6;
 
       while (!success && attempt < maxAttempts && !isCancelledRef.current) {
         attempt++;
@@ -234,12 +234,12 @@ export default function App() {
               const isRateLimit = res.status === 429 || errData.isRateLimit;
               if (isRateLimit) {
                 if (attempt < maxAttempts) {
-                  const waitMs = Math.min(20000, attempt * 4000);
-                  console.warn(`Rate limit 429. Waiting ${waitMs / 1000}s before retry...`);
+                  const waitMs = Math.min(25000, attempt * 5000);
+                  console.warn(`[Free Key Rate Limit] 429 encountered. Waiting ${waitMs / 1000}s...`);
                   await new Promise((resolve) => setTimeout(resolve, waitMs));
                   continue;
                 }
-                throw new Error('AI တောင်းဆိုမှု ပမာဏ ပြည့်နေပါသည် (ခေတ္တစောင့်ပြီး ပြန်လည်ကြိုးစားပါ)');
+                throw new Error('AI တောင်းဆိုမှု ပမာဏ ပြည့်နေပါသည် (Free API Key ကို သုံးထားပါက ခေတ္တစောင့်ပြီး ပြန်လည်ကြိုးစားပါ)');
               }
               throw new Error(errData.error || `Server returned HTTP ${res.status}`);
             } else {
@@ -277,7 +277,7 @@ export default function App() {
         } catch (err: any) {
           console.error(`Batch translation error (attempt ${attempt}/${maxAttempts}):`, err);
           if (attempt < maxAttempts && !isCancelledRef.current) {
-            await new Promise((resolve) => setTimeout(resolve, 3000));
+            await new Promise((resolve) => setTimeout(resolve, 4000));
           } else {
             setItems((prev) =>
               prev.map((item) =>
@@ -290,9 +290,9 @@ export default function App() {
         }
       }
 
-      // Pacing delay between batch requests
+      // Pacing delay (1.5s - 3s) between batch requests to respect Free API limits
       if (i + batchSize < itemsToTranslate.length && !isCancelledRef.current) {
-        await new Promise((resolve) => setTimeout(resolve, 800));
+        await new Promise((resolve) => setTimeout(resolve, 2000));
       }
     }
 

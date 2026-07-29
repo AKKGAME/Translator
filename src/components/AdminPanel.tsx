@@ -54,10 +54,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   // Donation State
   const [donationForm, setDonationForm] = useState<DonationConfig>({
-    kpayPhone: currentDonationConfig?.kpayPhone || '09778899001',
-    kpayName: currentDonationConfig?.kpayName || 'AnimeGabar Admin',
-    wavePhone: currentDonationConfig?.wavePhone || '09778899001',
-    waveName: currentDonationConfig?.waveName || 'AnimeGabar Admin',
+    kpayPhone: currentDonationConfig?.kpayPhone || '09770033353',
+    kpayName: currentDonationConfig?.kpayName || 'Aung Kyaw Khant',
+    wavePhone: currentDonationConfig?.wavePhone || '09668888555',
+    waveName: currentDonationConfig?.waveName || 'Aung Kyaw Khant',
     note: currentDonationConfig?.note || 'Server ဖိုးနှင့် AI ဘာသာပြန်စရိတ် ကူညီထောက်ပံ့ပေးသော စိတ်ကောင်းစေတနာရှင်များအားလုံးကို အထူးပင် ကျေးဇူးတင်ရှိပါသည်။',
   });
   const [isSavingDonation, setIsSavingDonation] = useState(false);

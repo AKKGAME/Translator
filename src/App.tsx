@@ -67,10 +67,10 @@ export default function App() {
       customPromptNote: '',
       customApiKey: savedKey,
       donationConfig: savedDonation || {
-        kpayPhone: '09778899001',
-        kpayName: 'AnimeGabar Admin',
-        wavePhone: '09778899001',
-        waveName: 'AnimeGabar Admin',
+        kpayPhone: '09770033353',
+        kpayName: 'Aung Kyaw Khant',
+        wavePhone: '09668888555',
+        waveName: 'Aung Kyaw Khant',
         note: 'Server ဖိုးနှင့် AI ဘာသာပြန်စရိတ် ကူညီထောက်ပံ့ပေးသော စိတ်ကောင်းစေတနာရှင်များအားလုံးကို အထူးပင် ကျေးဇူးတင်ရှိပါသည်။',
       },
     };

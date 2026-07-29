@@ -29,7 +29,7 @@ export async function translateDirectlyViaGemini(
 
   if (!effectiveKey) {
     throw new Error(
-      'Hostinger Static Web Hosting ပေါ်တွင် သုံးရန် "ဘာသာပြန် ဆက်တင်များ" တွင် Gemini API Key ထည့်သွင်းပေးပါ။'
+      'Gemini API Key ထည့်သွင်းပေးပါ။'
     );
   }
 

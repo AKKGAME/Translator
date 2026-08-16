@@ -15,11 +15,17 @@ import {
   ChevronRight,
   Settings,
   VolumeX,
+  Plus,
+  Trash2,
+  GitMerge,
 } from 'lucide-react';
 
 interface SubtitleTableProps {
   items: SubtitleItem[];
   onUpdateItem: (id: number, updatedFields: Partial<SubtitleItem>) => void;
+  onAddItem?: (afterItemId?: number, startMsOverride?: number) => void;
+  onDeleteItem?: (id: number) => void;
+  onMergeItem?: (id: number) => void;
   onTranslateItem: (id: number) => void;
   onTranslateAll: (onlyPendingOrError?: boolean) => void;
   onStopTranslation?: () => void;
@@ -32,6 +38,9 @@ interface SubtitleTableProps {
 export const SubtitleTable: React.FC<SubtitleTableProps> = ({
   items,
   onUpdateItem,
+  onAddItem,
+  onDeleteItem,
+  onMergeItem,
   onTranslateItem,
   onTranslateAll,
   onStopTranslation,
@@ -189,6 +198,17 @@ export const SubtitleTable: React.FC<SubtitleTableProps> = ({
             <VolumeX className="w-3.5 h-3.5 text-rose-400" />
             <span>အသံဆူညံသံ ဖျက်မည်</span>
           </button>
+
+          {onAddItem && (
+            <button
+              onClick={() => onAddItem()}
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 font-bold text-xs rounded-xl transition shadow-sm"
+              title="စာတန်းထိုး အသစ်တစ်ကြောင်း ထည့်မည်"
+            >
+              <Plus className="w-3.5 h-3.5 text-emerald-400" />
+              <span>စာကြောင်း အသစ်ထည့်မည်</span>
+            </button>
+          )}
 
           {isTranslating ? (
             <button
@@ -383,23 +403,64 @@ export const SubtitleTable: React.FC<SubtitleTableProps> = ({
                         </div>
                       </td>
 
-                      {/* Single Translate/Retry Action */}
-                      <td className="py-3.5 px-4 text-center">
-                        <button
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            onTranslateItem(item.id);
-                          }}
-                          disabled={item.status === 'translating'}
-                          title="ဒီတစ်ကြောင်းတည်း AI ပြန်ပြန်မည်"
-                          className="p-2 rounded-xl bg-slate-800 hover:bg-emerald-500/20 hover:text-emerald-400 text-slate-400 transition border border-slate-700/80"
-                        >
-                          <RefreshCw
-                            className={`w-3.5 h-3.5 ${
-                              item.status === 'translating' ? 'animate-spin text-emerald-400' : ''
-                            }`}
-                          />
-                        </button>
+                      {/* Actions: Add / Merge / Delete / Translate */}
+                      <td className="py-3.5 px-3 text-center">
+                        <div className="flex items-center justify-center space-x-1">
+                          {onAddItem && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onAddItem(item.id);
+                              }}
+                              title="ဒီနောက်တွင် စာကြောင်းအသစ်ထည့်မည်"
+                              className="p-1.5 rounded-lg bg-slate-950 hover:bg-emerald-500/20 hover:text-emerald-400 text-slate-400 transition border border-slate-800"
+                            >
+                              <Plus className="w-3.5 h-3.5 text-emerald-400" />
+                            </button>
+                          )}
+
+                          {onMergeItem && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onMergeItem(item.id);
+                              }}
+                              title="နောက်တစ်ကြောင်းနှင့် ပေါင်းမည်"
+                              className="p-1.5 rounded-lg bg-slate-950 hover:bg-sky-500/20 hover:text-sky-400 text-slate-400 transition border border-slate-800"
+                            >
+                              <GitMerge className="w-3.5 h-3.5 text-sky-400" />
+                            </button>
+                          )}
+
+                          {onDeleteItem && (
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                onDeleteItem(item.id);
+                              }}
+                              title="ဒီစာကြောင်း ဖျက်မည်"
+                              className="p-1.5 rounded-lg bg-slate-950 hover:bg-rose-500/20 hover:text-rose-400 text-slate-400 transition border border-slate-800"
+                            >
+                              <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                            </button>
+                          )}
+
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onTranslateItem(item.id);
+                            }}
+                            disabled={item.status === 'translating'}
+                            title="ဒီတစ်ကြောင်းတည်း AI ပြန်ပြန်မည်"
+                            className="p-1.5 rounded-lg bg-slate-950 hover:bg-emerald-500/20 hover:text-emerald-400 text-slate-400 transition border border-slate-800"
+                          >
+                            <RefreshCw
+                              className={`w-3.5 h-3.5 ${
+                                item.status === 'translating' ? 'animate-spin text-emerald-400' : ''
+                              }`}
+                            />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   );

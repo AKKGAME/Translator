@@ -6,7 +6,7 @@ import {
   TranslationSettings,
   VideoConfig,
 } from './types';
-import { parseSubtitles } from './utils/subtitleParser';
+import { parseSubtitles, msToTimeSRT } from './utils/subtitleParser';
 import { DEFAULT_GLOSSARY_TERMS } from './utils/burmeseUtils';
 import { Header } from './components/Header';
 import { FileUploader } from './components/FileUploader';
@@ -136,6 +136,89 @@ export default function App() {
     setItems((prev) =>
       prev.map((item) => (item.id === id ? { ...item, ...updatedFields } : item))
     );
+  };
+
+  // Add new subtitle item
+  const handleAddItem = (afterItemId?: number, startMsOverride?: number) => {
+    setItems((prev) => {
+      let newStart = 0;
+      let insertIndex = prev.length;
+
+      if (startMsOverride !== undefined) {
+        newStart = Math.max(0, startMsOverride);
+        const foundIdx = prev.findIndex((i) => i.startMs > newStart);
+        if (foundIdx !== -1) insertIndex = foundIdx;
+      } else if (afterItemId !== undefined) {
+        const targetIdx = prev.findIndex((i) => i.id === afterItemId);
+        if (targetIdx !== -1) {
+          insertIndex = targetIdx + 1;
+          newStart = prev[targetIdx].endMs + 100;
+        }
+      } else if (prev.length > 0) {
+        newStart = prev[prev.length - 1].endMs + 100;
+      }
+
+      const newEnd = newStart + 2500;
+      const newItem: SubtitleItem = {
+        id: Date.now() + Math.floor(Math.random() * 1000),
+        index: insertIndex + 1,
+        startTime: msToTimeSRT(newStart),
+        endTime: msToTimeSRT(newEnd),
+        startMs: newStart,
+        endMs: newEnd,
+        originalText: 'New Subtitle',
+        translatedText: '',
+        status: 'pending',
+      };
+
+      const updated = [...prev];
+      updated.splice(insertIndex, 0, newItem);
+
+      return updated.map((item, idx) => ({ ...item, index: idx + 1 }));
+    });
+  };
+
+  // Delete subtitle item
+  const handleDeleteItem = (id: number) => {
+    setItems((prev) => {
+      const filtered = prev.filter((i) => i.id !== id);
+      return filtered.map((item, idx) => ({ ...item, index: idx + 1 }));
+    });
+  };
+
+  // Merge subtitle item with next item
+  const handleMergeItem = (id: number) => {
+    setItems((prev) => {
+      const idx = prev.findIndex((i) => i.id === id);
+      if (idx === -1 || idx >= prev.length - 1) return prev;
+
+      const curr = prev[idx];
+      const next = prev[idx + 1];
+
+      const mergedStartMs = curr.startMs;
+      const mergedEndMs = Math.max(curr.endMs, next.endMs);
+      const mergedOrig = (curr.originalText + ' ' + next.originalText).trim();
+      const mergedTrans = [curr.translatedText, next.translatedText]
+        .filter(Boolean)
+        .join(' ')
+        .trim();
+
+      const mergedItem: SubtitleItem = {
+        ...curr,
+        startMs: mergedStartMs,
+        endMs: mergedEndMs,
+        startTime: msToTimeSRT(mergedStartMs),
+        endTime: msToTimeSRT(mergedEndMs),
+        originalText: mergedOrig,
+        translatedText: mergedTrans,
+        status: mergedTrans ? 'completed' : 'pending',
+      };
+
+      const updated = [...prev];
+      updated.splice(idx, 2, mergedItem);
+
+      return updated.map((item, i) => ({ ...item, index: i + 1 }));
+    });
   };
 
   const isCancelledRef = useRef(false);
@@ -393,6 +476,9 @@ export default function App() {
               <SubtitleTable
                 items={items}
                 onUpdateItem={handleUpdateItem}
+                onAddItem={handleAddItem}
+                onDeleteItem={handleDeleteItem}
+                onMergeItem={handleMergeItem}
                 onTranslateItem={handleTranslateSingleItem}
                 onTranslateAll={handleTranslateSubtitles}
                 onStopTranslation={handleStopTranslation}
@@ -410,6 +496,9 @@ export default function App() {
                 onUpdateVideoConfig={setVideoConfig}
                 onSelectSubItem={(item) => setActiveSubIndex(item.index)}
                 onUpdateItem={handleUpdateItem}
+                onAddItem={handleAddItem}
+                onDeleteItem={handleDeleteItem}
+                onMergeItem={handleMergeItem}
                 onTimeShiftClick={() => setIsShiftOpen(true)}
               />
             )}

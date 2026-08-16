@@ -1,6 +1,7 @@
-import React, { useState, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import { SubtitleItem, VideoConfig } from '../types';
 import { msToTimeSRT } from '../utils/subtitleParser';
+import { BURMESE_PUNCTUATION_HELPERS, cleanSoundEffects } from '../utils/burmeseUtils';
 import {
   Play,
   Pause,
@@ -12,17 +13,24 @@ import {
   Type,
   Settings,
   Layers,
-  ChevronRight,
-  Sparkles,
   Clock,
-  Plus,
-  Minus,
   FastForward,
   Rewind,
   Target,
-  Edit3,
-  Check,
   Search,
+  Gauge,
+  Keyboard,
+  Wand2,
+  Check,
+  RotateCcw,
+  Sliders,
+  ChevronDown,
+  ChevronUp,
+  Sparkles,
+  Zap,
+  Plus,
+  Trash2,
+  GitMerge,
 } from 'lucide-react';
 
 interface VideoPreviewProps {
@@ -31,6 +39,9 @@ interface VideoPreviewProps {
   onUpdateVideoConfig: (newConfig: VideoConfig) => void;
   onSelectSubItem?: (item: SubtitleItem) => void;
   onUpdateItem?: (id: number, updatedFields: Partial<SubtitleItem>) => void;
+  onAddItem?: (afterItemId?: number, startMsOverride?: number) => void;
+  onDeleteItem?: (id: number) => void;
+  onMergeItem?: (id: number) => void;
   onTimeShiftClick?: () => void;
 }
 
@@ -40,22 +51,136 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
   onUpdateVideoConfig,
   onSelectSubItem,
   onUpdateItem,
+  onAddItem,
+  onDeleteItem,
+  onMergeItem,
   onTimeShiftClick,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const listContainerRef = useRef<HTMLDivElement>(null);
+  const subItemRefs = useRef<Record<number, HTMLDivElement | null>>({});
+
   const [isPlaying, setIsPlaying] = useState(false);
   const [currentTimeMs, setCurrentTimeMs] = useState(0);
   const [durationSec, setDurationSec] = useState(0);
   const [activeSub, setActiveSub] = useState<SubtitleItem | null>(null);
-  const [customVideoFile, setCustomVideoFile] = useState<string | null>(null);
-
   const [hasVideoError, setHasVideoError] = useState(false);
-
   const [isMuted, setIsMuted] = useState(false);
-  const [editingId, setEditingId] = useState<number | null>(null);
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
   const [subSearch, setSubSearch] = useState('');
+  const [autoScroll, setAutoScroll] = useState(true);
+  const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
+  const [showAdvancedControls, setShowAdvancedControls] = useState(true);
+  const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
+  // Target field to edit: 'translated' (အသစ်/မြန်မာဘာသာ) or 'original' (မူရင်း/အင်္ဂလိပ်)
+  const [editTarget, setEditTarget] = useState<'translated' | 'original'>('translated');
 
-  // Time adjustment helpers
+  // Sync playback speed with video element
+  useEffect(() => {
+    if (videoRef.current) {
+      videoRef.current.playbackRate = playbackSpeed;
+    }
+  }, [playbackSpeed]);
+
+  // Handle video time update
+  const handleTimeUpdate = () => {
+    if (!videoRef.current) return;
+    const currentMs = Math.round(videoRef.current.currentTime * 1000);
+    setCurrentTimeMs(currentMs);
+
+    // Find active subtitle
+    const current = items.find(
+      (item) => currentMs >= item.startMs && currentMs <= item.endMs
+    );
+    setActiveSub(current || null);
+  };
+
+  // Auto-scroll list to active subtitle item during playback
+  useEffect(() => {
+    if (activeSub && autoScroll) {
+      const activeElement = subItemRefs.current[activeSub.id];
+      if (activeElement && listContainerRef.current) {
+        activeElement.scrollIntoView({
+          behavior: 'smooth',
+          block: 'nearest',
+        });
+      }
+    }
+  }, [activeSub, autoScroll]);
+
+  const handleLoadedMetadata = () => {
+    setHasVideoError(false);
+    if (videoRef.current) {
+      setDurationSec(videoRef.current.duration || 0);
+      videoRef.current.playbackRate = playbackSpeed;
+    }
+  };
+
+  const handleVideoError = () => {
+    setHasVideoError(true);
+    setIsPlaying(false);
+  };
+
+  const togglePlay = useCallback(() => {
+    if (!videoRef.current || hasVideoError) return;
+    if (isPlaying) {
+      videoRef.current.pause();
+    } else {
+      videoRef.current.play().catch(() => setHasVideoError(true));
+    }
+    setIsPlaying(!isPlaying);
+  }, [isPlaying, hasVideoError]);
+
+  const toggleMute = () => {
+    if (!videoRef.current) return;
+    videoRef.current.muted = !isMuted;
+    setIsMuted(!isMuted);
+  };
+
+  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const newSec = parseFloat(e.target.value);
+    if (videoRef.current) {
+      videoRef.current.currentTime = newSec;
+      setCurrentTimeMs(Math.round(newSec * 1000));
+    }
+  };
+
+  const skipSeconds = useCallback((secs: number) => {
+    if (!videoRef.current) return;
+    const newTime = Math.max(0, Math.min(durationSec || 9999, videoRef.current.currentTime + secs));
+    videoRef.current.currentTime = newTime;
+    setCurrentTimeMs(Math.round(newTime * 1000));
+  }, [durationSec]);
+
+  const jumpToTime = useCallback((startMs: number, autoPlay: boolean = true) => {
+    if (!videoRef.current) return;
+    videoRef.current.currentTime = startMs / 1000;
+    setCurrentTimeMs(startMs);
+    if (autoPlay && !isPlaying && !hasVideoError) {
+      videoRef.current.play().catch(() => setHasVideoError(true));
+      setIsPlaying(true);
+    }
+  }, [isPlaying, hasVideoError]);
+
+  const jumpToPrevSub = useCallback(() => {
+    if (!items.length) return;
+    const prev = [...items].reverse().find((it) => it.startMs < currentTimeMs - 500);
+    if (prev) {
+      jumpToTime(prev.startMs);
+    } else if (items[0]) {
+      jumpToTime(items[0].startMs);
+    }
+  }, [items, currentTimeMs, jumpToTime]);
+
+  const jumpToNextSub = useCallback(() => {
+    if (!items.length) return;
+    const next = items.find((it) => it.startMs > currentTimeMs + 200);
+    if (next) {
+      jumpToTime(next.startMs);
+    }
+  }, [items, currentTimeMs, jumpToTime]);
+
+  // Adjust Start / End time of a subtitle item
   const handleAdjustTime = (itemId: number, field: 'startMs' | 'endMs', msDelta: number) => {
     if (!onUpdateItem) return;
     const item = items.find((i) => i.id === itemId);
@@ -85,8 +210,8 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
     if (!item) return;
 
     const newStart = Math.max(0, currentTimeMs);
-    const dur = Math.max(1000, item.endMs - item.startMs);
-    const newEnd = Math.max(newStart + 500, newStart + dur);
+    const dur = Math.max(800, item.endMs - item.startMs);
+    const newEnd = Math.max(newStart + 300, newStart + dur);
     onUpdateItem(itemId, {
       startMs: newStart,
       endMs: newEnd,
@@ -107,77 +232,33 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
     });
   };
 
-  // Timeupdate handler
-  const handleTimeUpdate = () => {
-    if (!videoRef.current) return;
-    const currentMs = Math.round(videoRef.current.currentTime * 1000);
-    setCurrentTimeMs(currentMs);
-
-    // Find active subtitle
-    const current = items.find(
-      (item) => currentMs >= item.startMs && currentMs <= item.endMs
-    );
-    setActiveSub(current || null);
-  };
-
-  const handleLoadedMetadata = () => {
-    setHasVideoError(false);
-    if (videoRef.current) {
-      setDurationSec(videoRef.current.duration || 0);
-    }
-  };
-
-  const handleVideoError = () => {
-    setHasVideoError(true);
-    setIsPlaying(false);
-  };
-
-  const togglePlay = () => {
-    if (!videoRef.current || hasVideoError) return;
-    if (isPlaying) {
-      videoRef.current.pause();
+  // Insert Burmese punctuation directly (respects editTarget: original or translated)
+  const handleInsertSymbol = (itemId: number, symbol: string) => {
+    if (!onUpdateItem) return;
+    const item = items.find((i) => i.id === itemId);
+    if (!item) return;
+    if (editTarget === 'original') {
+      const currentText = item.originalText || '';
+      onUpdateItem(itemId, { originalText: currentText + symbol });
     } else {
-      videoRef.current.play().catch(() => setHasVideoError(true));
-    }
-    setIsPlaying(!isPlaying);
-  };
-
-  const toggleMute = () => {
-    if (!videoRef.current) return;
-    videoRef.current.muted = !isMuted;
-    setIsMuted(!isMuted);
-  };
-
-  const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const newSec = parseFloat(e.target.value);
-    if (videoRef.current) {
-      videoRef.current.currentTime = newSec;
-      setCurrentTimeMs(Math.round(newSec * 1000));
+      const currentText = item.translatedText || '';
+      onUpdateItem(itemId, { translatedText: currentText + symbol });
     }
   };
 
-  const skipSeconds = (secs: number) => {
-    if (!videoRef.current) return;
-    const newTime = Math.max(0, Math.min(durationSec || 9999, videoRef.current.currentTime + secs));
-    videoRef.current.currentTime = newTime;
-    setCurrentTimeMs(Math.round(newTime * 1000));
-  };
-
-  const jumpToPrevSub = () => {
-    if (!items.length) return;
-    const prev = [...items].reverse().find((it) => it.startMs < currentTimeMs - 500);
-    if (prev) {
-      jumpToTime(prev.startMs);
-    } else if (items[0]) {
-      jumpToTime(items[0].startMs);
-    }
-  };
-
-  const jumpToNextSub = () => {
-    if (!items.length) return;
-    const next = items.find((it) => it.startMs > currentTimeMs + 200);
-    if (next) {
-      jumpToTime(next.startMs);
+  // Clean sound effects for a single item (respects editTarget)
+  const handleCleanItemSound = (itemId: number) => {
+    if (!onUpdateItem) return;
+    const item = items.find((i) => i.id === itemId);
+    if (!item) return;
+    if (editTarget === 'original') {
+      if (!item.originalText) return;
+      const cleaned = cleanSoundEffects(item.originalText);
+      onUpdateItem(itemId, { originalText: cleaned });
+    } else {
+      if (!item.translatedText) return;
+      const cleaned = cleanSoundEffects(item.translatedText);
+      onUpdateItem(itemId, { translatedText: cleaned });
     }
   };
 
@@ -188,16 +269,6 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
       } else {
         videoRef.current.parentElement.requestFullscreen().catch(() => {});
       }
-    }
-  };
-
-  const jumpToTime = (startMs: number) => {
-    if (!videoRef.current) return;
-    videoRef.current.currentTime = startMs / 1000;
-    setCurrentTimeMs(startMs);
-    if (!isPlaying && !hasVideoError) {
-      videoRef.current.play().catch(() => setHasVideoError(true));
-      setIsPlaying(true);
     }
   };
 
@@ -217,33 +288,145 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       const url = URL.createObjectURL(file);
-      setCustomVideoFile(url);
       setHasVideoError(false);
       onUpdateVideoConfig({ ...videoConfig, videoUrl: url, isCustomVideo: true });
     }
   };
 
-  // Sample Videos with reliable fallback sources
-  const sampleVideos = [
-    {
-      title: 'Big Buck Bunny (Sample 1)',
-      url: 'https://www.w3schools.com/html/mov_bbb.mp4',
-    },
-    {
-      title: 'Sintel Trailer (Sample 2)',
-      url: 'https://media.w3.org/2010/05/sintel/trailer.mp4',
-    },
-    {
-      title: 'Google Cloud Sample',
-      url: 'https://commondatastorage.googleapis.com/gtv-videos-bucket/sample/BigBuckBunny.mp4',
-    },
-  ];
+  // Global Keyboard Shortcuts for player
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      // Ignore if user is currently typing inside an input/textarea
+      const activeTag = (document.activeElement?.tagName || '').toLowerCase();
+      if (activeTag === 'input' || activeTag === 'textarea' || activeTag === 'select') {
+        if (e.ctrlKey && e.key === 'Enter') {
+          // Ctrl+Enter advances to next sub
+          e.preventDefault();
+          jumpToNextSub();
+        }
+        return;
+      }
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        togglePlay();
+      } else if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        skipSeconds(-3);
+      } else if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        skipSeconds(3);
+      } else if (e.code === 'ArrowUp') {
+        e.preventDefault();
+        jumpToPrevSub();
+      } else if (e.code === 'ArrowDown') {
+        e.preventDefault();
+        jumpToNextSub();
+      } else if (e.altKey && e.code === 'BracketLeft' && activeSub) {
+        e.preventDefault();
+        handleSetStartToNow(activeSub.id);
+      } else if (e.altKey && e.code === 'BracketRight' && activeSub) {
+        e.preventDefault();
+        handleSetEndToNow(activeSub.id);
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [togglePlay, skipSeconds, jumpToPrevSub, jumpToNextSub, activeSub]);
+
+  // Filtered subtitle items for search
+  const filteredItems = items.filter(
+    (item) =>
+      !subSearch ||
+      item.originalText.toLowerCase().includes(subSearch.toLowerCase()) ||
+      item.translatedText?.toLowerCase().includes(subSearch.toLowerCase()) ||
+      item.index.toString().includes(subSearch)
+  );
 
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+      {/* Top Header & Keyboard Shortcut Info Bar */}
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm">
+        <div className="flex items-center space-x-3">
+          <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30">
+            <Film className="w-5 h-5" />
+          </div>
+          <div>
+            <h2 className="text-sm font-bold text-slate-100 flex items-center space-x-2">
+              <span>ဗီဒီယို ကြည့်ရင်း တိုက်ရိုက် စာတန်းထိုး ပြင်ဆင်ရန် (Video Live Subtitle Editor)</span>
+            </h2>
+            <p className="text-xs text-slate-400 mt-0.5">
+              ဗီဒီယို ကြည့်ရင်း စာတန်းထိုးများကို တစ်ခါတည်း တိုက်ရိုက် ရေးသား/ပြင်ဆင်နိုင်ပါသည်။
+            </p>
+          </div>
+        </div>
+
+        <div className="flex items-center space-x-2">
+          <button
+            onClick={() => setShowKeyboardHelp(!showKeyboardHelp)}
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl border border-slate-700 transition"
+            title="ကီးဘုတ် ဖြတ်လမ်းနည်းများ ကြည့်မည်"
+          >
+            <Keyboard className="w-3.5 h-3.5 text-amber-400" />
+            <span>Shortcuts</span>
+          </button>
+
+          {onTimeShiftClick && (
+            <button
+              onClick={onTimeShiftClick}
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold rounded-xl border border-amber-500/30 transition"
+            >
+              <Clock className="w-3.5 h-3.5" />
+              <span>အချိန် အဆိုင်း ချိန်မည်</span>
+            </button>
+          )}
+        </div>
+      </div>
+
+      {/* Keyboard Shortcuts Help Drawer */}
+      {showKeyboardHelp && (
+        <div className="bg-slate-900 border border-amber-500/40 rounded-2xl p-4 text-xs text-slate-300 space-y-3 animate-fadeIn">
+          <div className="flex items-center justify-between font-bold text-amber-300 border-b border-slate-800 pb-2">
+            <span className="flex items-center space-x-2">
+              <Keyboard className="w-4 h-4" />
+              <span>အမြန် ကီးဘုတ် ဖြတ်လမ်းများ (Keyboard Shortcuts)</span>
+            </span>
+            <button
+              onClick={() => setShowKeyboardHelp(false)}
+              className="text-slate-400 hover:text-slate-200"
+            >
+              ✕
+            </button>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-[11px] font-mono">
+            <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
+              <span className="text-emerald-400 font-bold">Spacebar:</span> ဖွင့်မည် / ရပ်မည် (Play/Pause)
+            </div>
+            <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
+              <span className="text-emerald-400 font-bold">← / → (Arrows):</span> 3 စက္ကန့် နောက်သို့/ရှေ့သို့
+            </div>
+            <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
+              <span className="text-emerald-400 font-bold">↑ / ↓ (Arrows):</span> ယခင် / နောက် စာကြောင်းသို့ သွားမည်
+            </div>
+            <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
+              <span className="text-emerald-400 font-bold">Ctrl + Enter:</span> စာသား ရေးပြီးပါက နောက်လိုင်းသို့ သွားမည်
+            </div>
+            <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
+              <span className="text-emerald-400 font-bold">Alt + [ :</span> စတင်ချိန်ကို လက်ရှိ ဗီဒီယိုနေရာ သတ်မှတ်မည်
+            </div>
+            <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
+              <span className="text-emerald-400 font-bold">Alt + ] :</span> ပြီးဆုံးချိန်ကို လက်ရှိ ဗီဒီယိုနေရာ သတ်မှတ်မည်
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Main Grid: Video Player Left (2 Cols) | Editable Subtitle List Right (1 Col) */}
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left 2 Cols: Video Player & Subtitle Overlay */}
+        {/* Left 2 Cols: Video Player & Controls & Live Subtitle Panel */}
         <div className="lg:col-span-2 space-y-4">
+          {/* Main Video Box */}
           <div className="relative bg-black rounded-2xl overflow-hidden shadow-2xl border border-slate-800 aspect-video group">
             <video
               ref={videoRef}
@@ -279,7 +462,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
               </div>
             )}
 
-            {/* Subtitle Overlay Rendering */}
+            {/* Subtitle Overlay Rendering on Video */}
             {activeSub && (
               <div
                 className={`absolute left-0 right-0 px-6 py-3 flex flex-col items-center justify-center text-center transition-all ${
@@ -295,9 +478,9 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                     backgroundColor: videoConfig.bgColor,
                     fontSize: `${videoConfig.fontSize}px`,
                   }}
-                  className="px-4 py-2 rounded-xl backdrop-blur-sm max-w-2xl leading-relaxed shadow-lg border border-white/10"
+                  className="px-5 py-2.5 rounded-xl backdrop-blur-md max-w-2xl leading-relaxed shadow-2xl border border-white/10 transition-all transform scale-100"
                 >
-                  {/* Translated Myanmar Line */}
+                  {/* Myanmar Translated Subtitle */}
                   {(videoConfig.subtitleMode === 'translated' ||
                     videoConfig.subtitleMode === 'dual') && (
                     <div
@@ -308,7 +491,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                     </div>
                   )}
 
-                  {/* Dual Mode Original English Line */}
+                  {/* Dual Mode Original English Subtitle */}
                   {(videoConfig.subtitleMode === 'original' ||
                     videoConfig.subtitleMode === 'dual') && (
                     <div
@@ -322,7 +505,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
               </div>
             )}
 
-            {/* Play Overlay Control */}
+            {/* Play Overlay Touch/Click Control */}
             <div
               onClick={togglePlay}
               className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition cursor-pointer"
@@ -333,7 +516,45 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
             </div>
           </div>
 
-          {/* Video Playback & Seek Scrubber Control Bar */}
+          {/* Subtitle Timeline Visual Wave/Track Bar */}
+          {durationSec > 0 && items.length > 0 && (
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-2 shadow-sm space-y-1">
+              <div className="flex items-center justify-between text-[10px] text-slate-400 px-1 font-mono">
+                <span>Timeline Preview ({items.length} Subtitles)</span>
+                <span>{formatSecToTime(currentTimeMs / 1000)}</span>
+              </div>
+              <div className="relative h-4 bg-slate-950 rounded-lg overflow-hidden border border-slate-800 flex items-center">
+                {items.map((it) => {
+                  const leftPercent = Math.min(100, Math.max(0, ((it.startMs / 1000) / durationSec) * 100));
+                  const widthPercent = Math.min(100 - leftPercent, Math.max(0.5, (((it.endMs - it.startMs) / 1000) / durationSec) * 100));
+                  const isActive = activeSub?.id === it.id;
+
+                  return (
+                    <div
+                      key={it.id}
+                      onClick={() => jumpToTime(it.startMs)}
+                      title={`#${it.index}: ${it.translatedText || it.originalText}`}
+                      style={{ left: `${leftPercent}%`, width: `${widthPercent}%` }}
+                      className={`absolute top-0.5 bottom-0.5 rounded-xs cursor-pointer transition ${
+                        isActive
+                          ? 'bg-amber-400 z-10 ring-2 ring-amber-300'
+                          : it.translatedText
+                          ? 'bg-emerald-500/70 hover:bg-emerald-400'
+                          : 'bg-slate-700/60 hover:bg-slate-500'
+                      }`}
+                    />
+                  );
+                })}
+                {/* Current Playhead Marker */}
+                <div
+                  style={{ left: `${Math.min(100, Math.max(0, ((currentTimeMs / 1000) / durationSec) * 100))}%` }}
+                  className="absolute top-0 bottom-0 w-0.5 bg-rose-500 z-20 shadow-md"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Player Scrubber & Control Bar */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
             {/* Timeline Range Scrubber */}
             <div className="space-y-1">
@@ -361,25 +582,25 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
               </div>
             </div>
 
-            {/* Playback & Seek Buttons */}
+            {/* Playback Controls & Speed Selector */}
             <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-slate-800/80">
               {/* Left: Skip & Play Controls */}
-              <div className="flex items-center space-x-1.5">
+              <div className="flex items-center space-x-1.5 flex-wrap">
                 <button
                   onClick={jumpToPrevSub}
                   className="p-2 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-800 transition text-xs flex items-center space-x-1"
-                  title="ယခင် စာတန်းထိုးသို့ သွားမည်"
+                  title="ယခင် စာတန်းထိုးသို့ သွားမည် (Up Arrow)"
                 >
                   <Rewind className="w-3.5 h-3.5 text-amber-400" />
-                  <span className="hidden xs:inline text-[11px]">ယခင် စာကြောင်း</span>
+                  <span className="hidden xs:inline text-[11px]">ယခင်</span>
                 </button>
 
                 <button
-                  onClick={() => skipSeconds(-5)}
+                  onClick={() => skipSeconds(-3)}
                   className="p-2 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-800 transition text-xs flex items-center space-x-1"
-                  title="5 စက္ကန့် နောက်သို့ ကျော်မည်"
+                  title="3 စက္ကန့် နောက်သို့ ကျော်မည် (Left Arrow)"
                 >
-                  <span className="text-[11px] font-bold text-slate-300">-5s</span>
+                  <span className="text-[11px] font-bold text-slate-300">-3s</span>
                 </button>
 
                 <button
@@ -400,21 +621,39 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                 </button>
 
                 <button
-                  onClick={() => skipSeconds(5)}
+                  onClick={() => skipSeconds(3)}
                   className="p-2 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-800 transition text-xs flex items-center space-x-1"
-                  title="5 စက္ကန့် ရှေ့သို့ ကျော်မည်"
+                  title="3 စက္ကန့် ရှေ့သို့ ကျော်မည် (Right Arrow)"
                 >
-                  <span className="text-[11px] font-bold text-slate-300">+5s</span>
+                  <span className="text-[11px] font-bold text-slate-300">+3s</span>
                 </button>
 
                 <button
                   onClick={jumpToNextSub}
                   className="p-2 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-800 transition text-xs flex items-center space-x-1"
-                  title="နောက် စာတန်းထိုးသို့ သွားမည်"
+                  title="နောက် စာတန်းထိုးသို့ သွားမည် (Down Arrow)"
                 >
-                  <span className="hidden xs:inline text-[11px]">နောက် စာကြောင်း</span>
+                  <span className="hidden xs:inline text-[11px]">နောက်</span>
                   <FastForward className="w-3.5 h-3.5 text-amber-400" />
                 </button>
+              </div>
+
+              {/* Middle: Speed Selector */}
+              <div className="flex items-center space-x-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-[11px]">
+                <Gauge className="w-3.5 h-3.5 text-emerald-400 ml-1" />
+                {[0.5, 0.75, 1.0, 1.25, 1.5].map((spd) => (
+                  <button
+                    key={spd}
+                    onClick={() => setPlaybackSpeed(spd)}
+                    className={`px-2 py-0.5 rounded-lg font-mono font-bold transition ${
+                      playbackSpeed === spd
+                        ? 'bg-emerald-500 text-slate-950'
+                        : 'text-slate-400 hover:text-slate-200'
+                    }`}
+                  >
+                    {spd}x
+                  </button>
+                ))}
               </div>
 
               {/* Right: Audio Mute & Fullscreen */}
@@ -442,224 +681,321 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
             </div>
           </div>
 
-          {/* Subtitle Overlay Display Config Toolbar */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-4">
-            <div className="flex items-center justify-between text-xs font-bold text-slate-200 border-b border-slate-800 pb-3">
+          {/* Prominent Live Subtitle Quick Editor & Sync Card */}
+          <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl p-4 shadow-lg space-y-3">
+            <div className="flex flex-wrap items-center justify-between border-b border-slate-800 pb-2.5 gap-2">
               <div className="flex items-center space-x-2">
-                <Layers className="w-4 h-4 text-emerald-400" />
-                <span>စာတန်းထိုး ပြသမှု ပုံစံများ (Subtitle Display Settings)</span>
-              </div>
-            </div>
-
-            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs">
-              {/* Display Mode */}
-              <div>
-                <label className="block text-slate-400 mb-1">ပြသမည့် မုဒ် (Mode):</label>
-                <select
-                  value={videoConfig.subtitleMode}
-                  onChange={(e) =>
-                    onUpdateVideoConfig({
-                      ...videoConfig,
-                      subtitleMode: e.target.value as any,
-                    })
-                  }
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-slate-200 focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="translated">မြန်မာဘာသာ သီးသန့် (Myanmar Only)</option>
-                  <option value="dual">နှစ်ဘာသာ ပူးတွဲ (Dual English + Myanmar)</option>
-                  <option value="original">မူရင်း သီးသန့် (Original Only)</option>
-                </select>
-              </div>
-
-              {/* Font Size */}
-              <div>
-                <label className="block text-slate-400 mb-1">
-                  စာလုံး အရွယ်အစား: {videoConfig.fontSize}px
-                </label>
-                <input
-                  type="range"
-                  min={14}
-                  max={36}
-                  value={videoConfig.fontSize}
-                  onChange={(e) =>
-                    onUpdateVideoConfig({
-                      ...videoConfig,
-                      fontSize: Number(e.target.value),
-                    })
-                  }
-                  className="w-full accent-emerald-500 mt-2"
-                />
-              </div>
-
-              {/* Text Position */}
-              <div>
-                <label className="block text-slate-400 mb-1">နေရာ (Position):</label>
-                <select
-                  value={videoConfig.textPosition}
-                  onChange={(e) =>
-                    onUpdateVideoConfig({
-                      ...videoConfig,
-                      textPosition: e.target.value as any,
-                    })
-                  }
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-slate-200 focus:outline-none focus:border-emerald-500"
-                >
-                  <option value="bottom">အောက်ခြေ (Bottom)</option>
-                  <option value="top">အထက်ပိုင်း (Top)</option>
-                  <option value="middle">အလယ် (Middle)</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* Time Adjustment Controls Panel */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
-            <div className="flex items-center justify-between border-b border-slate-800 pb-2.5">
-              <div className="flex items-center space-x-2">
-                <Clock className="w-4 h-4 text-amber-400" />
-                <span className="text-xs font-bold text-slate-200">
-                  ဗီဒီယို ကြည့်ရင်း အချိန် ချိန်ညှိရန် (Live Time Sync & Shift)
+                <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-xs font-bold text-slate-100 flex items-center space-x-1.5">
+                  <Zap className="w-4 h-4 text-amber-400" />
+                  <span>လက်ရှိ ပြောဆိုနေသော စာကြောင်း တိုက်ရိုက် ပြင်ရန် (Live Editor)</span>
                 </span>
               </div>
-              {onTimeShiftClick && (
-                <button
-                  onClick={onTimeShiftClick}
-                  className="flex items-center space-x-1 px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-[11px] font-bold rounded-lg border border-amber-500/30 transition"
-                >
-                  <Clock className="w-3.5 h-3.5" />
-                  <span>အသေးစိတ် တိုး/လျှော့ စနစ်</span>
-                </button>
+
+              {activeSub && (
+                <span className="bg-emerald-500/20 text-emerald-400 font-mono text-xs px-2.5 py-0.5 rounded-md font-bold border border-emerald-500/30">
+                  #{activeSub.index} ({activeSub.startTime} → {activeSub.endTime})
+                </span>
               )}
             </div>
 
-            {/* Quick Shift Presets Bar */}
-            <div className="flex items-center justify-between flex-wrap gap-2 text-xs">
-              <span className="text-[11px] text-slate-400">စာတန်းထိုး အားလုံး အချိန် တိုး/လျှော့:</span>
-              <div className="flex items-center space-x-1.5 flex-wrap">
-                {[
-                  { label: '-1s', ms: -1000 },
-                  { label: '-500ms', ms: -500 },
-                  { label: '-100ms', ms: -100 },
-                  { label: '+100ms', ms: 100 },
-                  { label: '+500ms', ms: 500 },
-                  { label: '+1s', ms: 1000 },
-                ].map((btn) => (
-                  <button
-                    key={btn.label}
-                    onClick={() => {
-                      if (onUpdateItem) {
-                        items.forEach((it) => {
-                          onUpdateItem(it.id, {
-                            startMs: Math.max(0, it.startMs + btn.ms),
-                            endMs: Math.max(0, it.endMs + btn.ms),
-                            startTime: msToTimeSRT(Math.max(0, it.startMs + btn.ms)),
-                            endTime: msToTimeSRT(Math.max(0, it.endMs + btn.ms)),
-                          });
-                        });
-                      }
-                    }}
-                    className="px-2 py-1 bg-slate-950 hover:bg-slate-800 text-slate-300 border border-slate-800 rounded-lg text-[11px] font-mono transition"
-                  >
-                    {btn.label}
-                  </button>
-                ))}
-              </div>
+            {/* Target Field Selector Switcher */}
+            <div className="flex items-center space-x-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800 text-xs">
+              <span className="text-[11px] text-slate-400 font-semibold px-1 whitespace-nowrap">
+                ပြင်ဆင်လိုသည့် စာသား:
+              </span>
+              <button
+                type="button"
+                onClick={() => setEditTarget('translated')}
+                className={`flex-1 py-1.5 px-3 rounded-lg font-bold text-xs transition flex items-center justify-center space-x-1.5 ${
+                  editTarget === 'translated'
+                    ? 'bg-emerald-500 text-slate-950 shadow-md ring-2 ring-emerald-400/40'
+                    : 'text-slate-400 hover:text-slate-200 bg-slate-900'
+                }`}
+              >
+                <span>✨ ဘာသာပြန် စာသား (Translated)</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setEditTarget('original')}
+                className={`flex-1 py-1.5 px-3 rounded-lg font-bold text-xs transition flex items-center justify-center space-x-1.5 ${
+                  editTarget === 'original'
+                    ? 'bg-sky-500 text-slate-950 shadow-md ring-2 ring-sky-400/40'
+                    : 'text-slate-400 hover:text-slate-200 bg-slate-900'
+                }`}
+              >
+                <span>📝 မူရင်း စာသား (Original)</span>
+              </button>
             </div>
 
-            {/* Currently Active Subtitle Line Live Sync & Direct Editor */}
-            {activeSub && onUpdateItem && (
-              <div className="bg-slate-950 p-3.5 rounded-xl border border-emerald-500/40 space-y-3">
-                <div className="flex items-center justify-between border-b border-slate-800 pb-2">
-                  <div className="flex items-center space-x-2">
-                    <span className="bg-emerald-500/20 text-emerald-400 px-2 py-0.5 rounded-md text-xs font-mono font-bold">
-                      #{activeSub.index}
+            {activeSub ? (
+              <div className="space-y-3">
+                {/* Secondary Reference Box (Shows the non-active target text) */}
+                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs text-slate-300 flex items-center justify-between">
+                  <div className="flex-1 mr-2">
+                    <span className="text-[10px] text-slate-500 block uppercase font-mono">
+                      {editTarget === 'translated' ? 'မူရင်း စာသား (Original Source):' : 'မြန်မာ ဘာသာပြန် (Translated):'}
                     </span>
-                    <span className="text-xs font-bold text-slate-200">
-                      လက်ရှိ စာကြောင်း တိုက်ရိုက် ပြင်ဆင်ရန် (Live Edit)
+                    <span className="font-sans text-slate-200 font-medium">
+                      {editTarget === 'translated'
+                        ? (activeSub.originalText || '—')
+                        : (activeSub.translatedText || '(ဘာသာပြန် မရှိသေးပါ)')}
                     </span>
                   </div>
-                  <div className="flex items-center space-x-1 font-mono text-[11px] text-amber-300">
-                    <span>{activeSub.startTime}</span>
-                    <span>→</span>
-                    <span>{activeSub.endTime}</span>
-                  </div>
+                  <button
+                    onClick={() => handleCleanItemSound(activeSub.id)}
+                    className="flex items-center space-x-1 px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-rose-300 text-[10px] rounded-lg border border-slate-800 transition whitespace-nowrap"
+                    title="ဟောဟဲ/အသံဆူညံသံများ ဖျက်မည်"
+                  >
+                    <Wand2 className="w-3 h-3 text-rose-400" />
+                    <span>အသံသံဖျက်</span>
+                  </button>
                 </div>
 
-                {/* Text Editing Field */}
+                {/* Primary Direct Editable Input Area */}
                 <div>
-                  <label className="text-[10px] text-slate-400 block mb-1">
-                    မြန်မာဘာသာ ပြန်ဆိုချက် (Myanmar Text):
-                  </label>
-                  <input
-                    type="text"
-                    value={activeSub.translatedText || ''}
-                    onChange={(e) =>
-                      onUpdateItem(activeSub.id, { translatedText: e.target.value })
-                    }
-                    placeholder="မြန်မာစာတန်းထိုး ရေးသားပါ..."
-                    className="w-full bg-slate-900 border border-slate-700/80 rounded-xl p-2.5 text-xs text-emerald-300 font-semibold focus:outline-none focus:border-emerald-500"
-                  />
-                  <div className="text-[10px] text-slate-400 mt-1 truncate">
-                    မူရင်း: {activeSub.originalText}
+                  <div className="flex items-center justify-between mb-1">
+                    <label className={`text-[11px] font-bold block ${editTarget === 'original' ? 'text-sky-400' : 'text-emerald-400'}`}>
+                      {editTarget === 'original'
+                        ? '📝 မူရင်း စာသား ပြင်ဆင်ရန် (Original Text Edit):'
+                        : '✨ မြန်မာဘာသာ ပြန်ဆိုချက် ပြင်ဆင်ရန် (Translated Text Edit):'}
+                    </label>
+                    <span className="text-[10px] text-slate-400 font-mono">
+                      {editTarget === 'original' ? 'Editing Original' : 'Editing Translated'}
+                    </span>
                   </div>
+                  <textarea
+                    rows={2}
+                    value={editTarget === 'original' ? (activeSub.originalText || '') : (activeSub.translatedText || '')}
+                    onChange={(e) => {
+                      if (!onUpdateItem) return;
+                      if (editTarget === 'original') {
+                        onUpdateItem(activeSub.id, { originalText: e.target.value });
+                      } else {
+                        onUpdateItem(activeSub.id, { translatedText: e.target.value });
+                      }
+                    }}
+                    placeholder={
+                      editTarget === 'original'
+                        ? 'မူရင်း အင်္ဂလိပ် စာတန်းထိုး ပြင်ဆင်ပါ...'
+                        : 'မြန်မာ စာတန်းထိုး ရေးသားပါ...'
+                    }
+                    className={`w-full bg-slate-950 border rounded-xl p-3 text-sm font-semibold focus:outline-none focus:ring-1 shadow-inner transition ${
+                      editTarget === 'original'
+                        ? 'border-sky-500/60 text-sky-200 focus:border-sky-400 focus:ring-sky-400/50'
+                        : 'border-emerald-500/60 text-emerald-300 focus:border-emerald-400 focus:ring-emerald-400/50'
+                    }`}
+                  />
                 </div>
 
-                {/* Live Timestamp Fine-Tuning Bar */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 text-[11px]">
-                  <div className="flex items-center space-x-1">
+                {/* Quick Burmese Symbol Insertion Chips */}
+                <div className="flex items-center space-x-1 overflow-x-auto pb-1 text-[11px]">
+                  <span className="text-[10px] text-slate-400 whitespace-nowrap mr-1">
+                    သင်္ကေတ ထည့်ရန်:
+                  </span>
+                  {BURMESE_PUNCTUATION_HELPERS.map((helper, idx) => (
+                    <button
+                      key={idx}
+                      onClick={() => handleInsertSymbol(activeSub.id, helper.symbol)}
+                      className="px-2 py-0.5 bg-slate-950 hover:bg-slate-800 text-slate-200 border border-slate-800 rounded-md font-mono text-[11px] whitespace-nowrap transition"
+                      title={helper.description}
+                    >
+                      {helper.symbol}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Instant Timestamp Adjusters */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800/80 text-[11px]">
+                  <div className="flex items-center space-x-1.5 flex-wrap">
                     <span className="text-slate-400 text-[10px]">စတင်ချိန်:</span>
                     <button
                       onClick={() => handleSetStartToNow(activeSub.id)}
-                      className="px-2 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold rounded-lg border border-emerald-500/30 transition flex items-center space-x-1"
-                      title="လက်ရှိ ဗီဒီယိုနေရာကို စတင်ချိန်အဖြစ် သတ်မှတ်မည်"
+                      className="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold rounded-lg border border-emerald-500/30 transition flex items-center space-x-1 text-[11px]"
+                      title="လက်ရှိ ဗီဒီယိုနေရာကို စတင်ချိန်အဖြစ် သတ်မှတ်မည် (Alt+[)"
                     >
-                      <Target className="w-3 h-3" />
+                      <Target className="w-3.5 h-3.5 text-emerald-400" />
                       <span>စတင်ချိန် သတ်မှတ်</span>
                     </button>
                     <button
                       onClick={() => handleAdjustTime(activeSub.id, 'startMs', -100)}
-                      className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded border border-slate-800 font-mono"
+                      className="px-1.5 py-0.5 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded border border-slate-800 font-mono"
                     >
                       -100ms
                     </button>
                     <button
                       onClick={() => handleAdjustTime(activeSub.id, 'startMs', 100)}
-                      className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded border border-slate-800 font-mono"
+                      className="px-1.5 py-0.5 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded border border-slate-800 font-mono"
                     >
                       +100ms
                     </button>
                   </div>
 
-                  <div className="flex items-center space-x-1">
+                  <div className="flex items-center space-x-1.5 flex-wrap">
                     <span className="text-slate-400 text-[10px]">ပြီးဆုံးချိန်:</span>
                     <button
                       onClick={() => handleSetEndToNow(activeSub.id)}
-                      className="px-2 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold rounded-lg border border-amber-500/30 transition flex items-center space-x-1"
-                      title="လက်ရှိ ဗီဒီယိုနေရာကို ပြီးဆုံးချိန်အဖြစ် သတ်မှတ်မည်"
+                      className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold rounded-lg border border-amber-500/30 transition flex items-center space-x-1 text-[11px]"
+                      title="လက်ရှိ ဗီဒီယိုနေရာကို ပြီးဆုံးချိန်အဖြစ် သတ်မှတ်မည် (Alt+])"
                     >
-                      <Target className="w-3 h-3" />
+                      <Target className="w-3.5 h-3.5 text-amber-400" />
                       <span>ပြီးဆုံးချိန် သတ်မှတ်</span>
                     </button>
                     <button
                       onClick={() => handleAdjustTime(activeSub.id, 'endMs', -100)}
-                      className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded border border-slate-800 font-mono"
+                      className="px-1.5 py-0.5 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded border border-slate-800 font-mono"
                     >
                       -100ms
                     </button>
                     <button
                       onClick={() => handleAdjustTime(activeSub.id, 'endMs', 100)}
-                      className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded border border-slate-800 font-mono"
+                      className="px-1.5 py-0.5 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded border border-slate-800 font-mono"
                     >
                       +100ms
                     </button>
                   </div>
+                </div>
+
+                {/* Add / Merge / Delete Quick Action Row for activeSub */}
+                <div className="flex items-center space-x-1.5 pt-2 border-t border-slate-800">
+                  {onAddItem && (
+                    <button
+                      type="button"
+                      onClick={() => onAddItem(activeSub.id)}
+                      className="flex-1 py-1 px-2 bg-slate-950 hover:bg-emerald-500/20 text-emerald-400 border border-slate-800 hover:border-emerald-500/40 rounded-lg text-[11px] font-bold transition flex items-center justify-center space-x-1"
+                      title="ဒီစာကြောင်းနောက်တွင် စာကြောင်းအသစ်ထည့်မည်"
+                    >
+                      <Plus className="w-3.5 h-3.5 text-emerald-400" />
+                      <span>+ အသစ်ထည့်</span>
+                    </button>
+                  )}
+
+                  {onMergeItem && (
+                    <button
+                      type="button"
+                      onClick={() => onMergeItem(activeSub.id)}
+                      className="flex-1 py-1 px-2 bg-slate-950 hover:bg-sky-500/20 text-sky-400 border border-slate-800 hover:border-sky-500/40 rounded-lg text-[11px] font-bold transition flex items-center justify-center space-x-1"
+                      title="နောက်စာကြောင်းနှင့် ပေါင်းမည်"
+                    >
+                      <GitMerge className="w-3.5 h-3.5 text-sky-400" />
+                      <span>🔗 ပေါင်းမည်</span>
+                    </button>
+                  )}
+
+                  {onDeleteItem && (
+                    <button
+                      type="button"
+                      onClick={() => onDeleteItem(activeSub.id)}
+                      className="py-1 px-2.5 bg-slate-950 hover:bg-rose-500/20 text-rose-400 border border-slate-800 hover:border-rose-500/40 rounded-lg text-[11px] font-bold transition flex items-center justify-center space-x-1"
+                      title="ဒီစာကြောင်း ဖျက်မည်"
+                    >
+                      <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                      <span>ဖျက်မည်</span>
+                    </button>
+                  )}
+                </div>
+              </div>
+            ) : (
+              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80 text-center text-xs text-slate-400 space-y-2">
+                <p className="text-slate-300 font-medium">
+                  လက်ရှိ ဗီဒီယိုနေရာတွင် စာတန်းထိုး မရှိသေးပါ
+                </p>
+                {onAddItem && (
+                  <button
+                    type="button"
+                    onClick={() => onAddItem(undefined, currentTimeMs)}
+                    className="px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/40 rounded-xl text-xs transition inline-flex items-center space-x-1.5 shadow-sm"
+                  >
+                    <Plus className="w-4 h-4 text-emerald-400" />
+                    <span>လက်ရှိ ဗီဒီယိုနေရာ၌ စာကြောင်းအသစ်ထည့်မည်</span>
+                  </button>
+                )}
+              </div>
+            )}
+          </div>
+
+          {/* Subtitle Overlay Config Options Drawer */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
+            <button
+              onClick={() => setShowAdvancedControls(!showAdvancedControls)}
+              className="w-full flex items-center justify-between text-xs font-bold text-slate-200"
+            >
+              <div className="flex items-center space-x-2">
+                <Layers className="w-4 h-4 text-emerald-400" />
+                <span>စာတန်းထိုး ပြသမှု ဒီဇိုင်း ဆက်တင်များ (Overlay Customization)</span>
+              </div>
+              {showAdvancedControls ? (
+                <ChevronUp className="w-4 h-4 text-slate-400" />
+              ) : (
+                <ChevronDown className="w-4 h-4 text-slate-400" />
+              )}
+            </button>
+
+            {showAdvancedControls && (
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs pt-2 border-t border-slate-800 animate-fadeIn">
+                {/* Display Mode */}
+                <div>
+                  <label className="block text-slate-400 mb-1">ပြသမည့် မုဒ် (Mode):</label>
+                  <select
+                    value={videoConfig.subtitleMode}
+                    onChange={(e) =>
+                      onUpdateVideoConfig({
+                        ...videoConfig,
+                        subtitleMode: e.target.value as any,
+                      })
+                    }
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-slate-200 focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="translated">မြန်မာဘာသာ သီးသန့် (Myanmar Only)</option>
+                    <option value="dual">နှစ်ဘာသာ ပူးတွဲ (Dual English + Myanmar)</option>
+                    <option value="original">မူရင်း သီးသန့် (Original Only)</option>
+                  </select>
+                </div>
+
+                {/* Font Size */}
+                <div>
+                  <label className="block text-slate-400 mb-1">
+                    စာလုံး အရွယ်အစား: {videoConfig.fontSize}px
+                  </label>
+                  <input
+                    type="range"
+                    min={14}
+                    max={36}
+                    value={videoConfig.fontSize}
+                    onChange={(e) =>
+                      onUpdateVideoConfig({
+                        ...videoConfig,
+                        fontSize: Number(e.target.value),
+                      })
+                    }
+                    className="w-full accent-emerald-500 mt-2"
+                  />
+                </div>
+
+                {/* Text Position */}
+                <div>
+                  <label className="block text-slate-400 mb-1">နေရာ (Position):</label>
+                  <select
+                    value={videoConfig.textPosition}
+                    onChange={(e) =>
+                      onUpdateVideoConfig({
+                        ...videoConfig,
+                        textPosition: e.target.value as any,
+                      })
+                    }
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-slate-200 focus:outline-none focus:border-emerald-500"
+                  >
+                    <option value="bottom">အောက်ခြေ (Bottom)</option>
+                    <option value="top">အထက်ပိုင်း (Top)</option>
+                    <option value="middle">အလယ် (Middle)</option>
+                  </select>
                 </div>
               </div>
             )}
           </div>
         </div>
 
-        {/* Right 1 Col: Video Selector & Timeline Subtitles */}
+        {/* Right 1 Col: Video Selector & Direct Editable Subtitle List */}
         <div className="space-y-4">
           {/* Custom Video Source Loader */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
@@ -679,40 +1015,51 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
               />
             </label>
 
-            <div className="pt-2 text-[11px] text-slate-400">
-              <span className="block mb-1">သို့မဟုတ် နမူနာ ဗီဒီယိုများ ရွေးရန်:</span>
-              <div className="space-y-1">
-                {sampleVideos.map((sample, idx) => (
-                  <button
-                    key={idx}
-                    onClick={() =>
-                      onUpdateVideoConfig({
-                        ...videoConfig,
-                        videoUrl: sample.url,
-                        isCustomVideo: false,
-                      })
-                    }
-                    className={`w-full text-left px-2.5 py-1.5 rounded-lg transition ${
-                      videoConfig.videoUrl === sample.url
-                        ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30'
-                        : 'bg-slate-950/60 hover:bg-slate-800 text-slate-300'
-                    }`}
-                  >
-                    {sample.title}
-                  </button>
-                ))}
-              </div>
-            </div>
+
           </div>
 
-          {/* Subtitle Jump List & Inline Quick Editor */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-3 max-h-[500px] flex flex-col">
+          {/* Subtitle List with Direct Inline Editable Textboxes */}
+          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-3 flex flex-col h-[640px]">
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-bold text-slate-200">
-                  စာတန်းထိုး လိုင်းများ ({items.length})
+                  စာတန်းထိုးများ ({filteredItems.length}/{items.length})
                 </h3>
-                <span className="text-[10px] text-slate-400">နှိပ်လျှင် ဗီဒီယို သို့ ရောက်မည်</span>
+                <label className="flex items-center space-x-1 text-[11px] text-slate-400 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={autoScroll}
+                    onChange={(e) => setAutoScroll(e.target.checked)}
+                    className="rounded bg-slate-950 border-slate-800 text-emerald-500 focus:ring-0"
+                  />
+                  <span>အလိုအလျောက် ရွှေ့မည်</span>
+                </label>
+              </div>
+
+              {/* Mode Toggle for List Inputs */}
+              <div className="grid grid-cols-2 gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setEditTarget('translated')}
+                  className={`py-1 rounded-lg font-bold transition text-center ${
+                    editTarget === 'translated'
+                      ? 'bg-emerald-500 text-slate-950 shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  ✨ ဘာသာပြန် ပြင်မည်
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setEditTarget('original')}
+                  className={`py-1 rounded-lg font-bold transition text-center ${
+                    editTarget === 'original'
+                      ? 'bg-sky-500 text-slate-950 shadow'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                >
+                  📝 မူရင်း ပြင်မည်
+                </button>
               </div>
 
               {/* Filter Search Input */}
@@ -728,129 +1075,194 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-2 pr-1">
-              {items
-                .filter(
-                  (item) =>
-                    !subSearch ||
-                    item.originalText.toLowerCase().includes(subSearch.toLowerCase()) ||
-                    item.translatedText?.toLowerCase().includes(subSearch.toLowerCase()) ||
-                    item.index.toString().includes(subSearch)
-                )
-                .map((item) => {
-                  const isCurrent = activeSub?.id === item.id;
-                  const isEditing = editingId === item.id;
+            {/* Scrollable Subtitles Container */}
+            <div
+              ref={listContainerRef}
+              className="flex-1 overflow-y-auto space-y-3 pr-1 divide-y divide-slate-800/60"
+            >
+              {filteredItems.map((item) => {
+                const isCurrent = activeSub?.id === item.id;
+                const isExpanded = expandedItemId === item.id;
 
-                  return (
-                    <div
-                      key={item.id}
-                      className={`p-3 rounded-xl border text-xs transition ${
-                        isCurrent
-                          ? 'bg-emerald-500/15 border-emerald-500/60 text-slate-100 shadow-md'
-                          : 'bg-slate-950 border-slate-800/80 hover:bg-slate-800/50 text-slate-300'
-                      }`}
-                    >
-                      <div className="flex items-center justify-between font-mono text-[10px] text-slate-400 mb-1.5">
+                return (
+                  <div
+                    key={item.id}
+                    ref={(el) => { subItemRefs.current[item.id] = el; }}
+                    className={`pt-3 first:pt-0 rounded-xl p-2.5 transition border ${
+                      isCurrent
+                        ? 'bg-emerald-500/15 border-emerald-500/70 shadow-lg ring-1 ring-emerald-500/30'
+                        : 'bg-slate-950/80 border-slate-800/80 hover:border-slate-700'
+                    }`}
+                  >
+                    {/* Item Top Metadata & Play Jump & Actions */}
+                    <div className="flex items-center justify-between font-mono text-[10px] text-slate-400 mb-1.5">
+                      <div className="flex items-center space-x-1.5">
                         <button
                           type="button"
                           onClick={() => jumpToTime(item.startMs)}
-                          className="hover:text-emerald-400 font-bold flex items-center space-x-1"
+                          className="px-2 py-0.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold rounded flex items-center space-x-1 transition"
+                          title="ဒီနေရာသို့ ဗီဒီယို သွားမည်"
                         >
-                          <Play className="w-3 h-3 fill-current text-emerald-400" />
-                          <span>#{item.index} ({item.startTime})</span>
+                          <Play className="w-2.5 h-2.5 fill-current text-emerald-400" />
+                          <span>#{item.index}</span>
                         </button>
+                        <span className="text-slate-300">{item.startTime} → {item.endTime}</span>
+                      </div>
+
+                      <div className="flex items-center space-x-1">
+                        {isCurrent && (
+                          <span className="flex items-center space-x-1 text-[10px] font-bold text-amber-300 bg-amber-500/20 px-1.5 py-0.5 rounded border border-amber-500/30 mr-1">
+                            <span className="w-1.5 h-1.5 rounded-full bg-amber-400 animate-ping" />
+                            <span>LIVE</span>
+                          </span>
+                        )}
+
+                        {onAddItem && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onAddItem(item.id);
+                            }}
+                            className="p-1 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-400 rounded transition"
+                            title="ဒီနောက်တွင် စာကြောင်းအသစ်ထည့်မည်"
+                          >
+                            <Plus className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+
+                        {onMergeItem && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onMergeItem(item.id);
+                            }}
+                            className="p-1 hover:bg-sky-500/20 text-slate-400 hover:text-sky-400 rounded transition"
+                            title="နောက်တစ်ကြောင်းနှင့် ပေါင်းမည်"
+                          >
+                            <GitMerge className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+
+                        {onDeleteItem && (
+                          <button
+                            type="button"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              onDeleteItem(item.id);
+                            }}
+                            className="p-1 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 rounded transition"
+                            title="ဒီစာကြောင်း ဖျက်မည်"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Reference Line depending on Edit Target */}
+                    <div className="text-[11px] text-slate-400 mb-1 font-sans line-clamp-2 bg-slate-900/50 p-1.5 rounded border border-slate-800/50">
+                      <span className="text-[9px] uppercase font-mono text-slate-500 block">
+                        {editTarget === 'translated' ? 'Original Source:' : 'Translated Text:'}
+                      </span>
+                      <span>
+                        {editTarget === 'translated'
+                          ? (item.originalText || '—')
+                          : (item.translatedText || '(ဘာသာပြန် မရှိသေးပါ)')}
+                      </span>
+                    </div>
+
+                    {/* Direct Editable Text Input (Switches based on editTarget) */}
+                    <div className="space-y-1.5 mt-1">
+                      <div className="relative">
+                        <input
+                          type="text"
+                          value={editTarget === 'original' ? (item.originalText || '') : (item.translatedText || '')}
+                          onChange={(e) => {
+                            if (!onUpdateItem) return;
+                            if (editTarget === 'original') {
+                              onUpdateItem(item.id, { originalText: e.target.value });
+                            } else {
+                              onUpdateItem(item.id, { translatedText: e.target.value });
+                            }
+                          }}
+                          onFocus={() => {
+                            if (onSelectSubItem) onSelectSubItem(item);
+                          }}
+                          placeholder={
+                            editTarget === 'original'
+                              ? 'မူရင်း စာတန်းထိုး တိုက်ရိုက် ပြင်ရန်...'
+                              : 'မြန်မာ စာတန်းထိုး တိုက်ရိုက် ရေးရန်...'
+                          }
+                          className={`w-full bg-slate-900 border rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none transition ${
+                            isCurrent
+                              ? editTarget === 'original'
+                                ? 'border-sky-500 text-sky-200 focus:ring-1 focus:ring-sky-400'
+                                : 'border-emerald-500 text-emerald-300 focus:ring-1 focus:ring-emerald-400'
+                              : editTarget === 'original'
+                              ? 'border-slate-800 text-slate-200 focus:border-sky-500'
+                              : 'border-slate-800 text-slate-200 focus:border-emerald-500'
+                          }`}
+                        />
+                      </div>
+
+                      {/* Quick Nudge & Time Buttons Bar */}
+                      <div className="flex items-center justify-between text-[10px] text-slate-400 pt-1">
+                        <div className="flex items-center space-x-1">
+                          <button
+                            type="button"
+                            onClick={() => handleSetStartToNow(item.id)}
+                            className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 text-emerald-400 rounded border border-slate-800 font-sans"
+                            title="စတင်ချိန်ကို လက်ရှိ ဗီဒီယိုနေရာ သတ်မှတ်မည်"
+                          >
+                            Set Start
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAdjustTime(item.id, 'startMs', -100)}
+                            className="px-1 py-0.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded font-mono"
+                          >
+                            -100
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleAdjustTime(item.id, 'startMs', 100)}
+                            className="px-1 py-0.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded font-mono"
+                          >
+                            +100
+                          </button>
+                        </div>
 
                         <div className="flex items-center space-x-1">
                           <button
                             type="button"
-                            onClick={() => setEditingId(isEditing ? null : item.id)}
-                            className="p-1 hover:bg-slate-800 rounded text-slate-300 hover:text-emerald-400"
-                            title="စာသားနှင့် အချိန် ပြင်ရန်"
+                            onClick={() => handleSetEndToNow(item.id)}
+                            className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 text-amber-400 rounded border border-slate-800 font-sans"
+                            title="ပြီးဆုံးချိန်ကို လက်ရှိ ဗီဒီယိုနေရာ သတ်မှတ်မည်"
                           >
-                            <Edit3 className="w-3.5 h-3.5" />
+                            Set End
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleInsertSymbol(item.id, '။')}
+                            className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 text-slate-200 rounded font-mono"
+                          >
+                            ။
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => handleInsertSymbol(item.id, '၊')}
+                            className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 text-slate-200 rounded font-mono"
+                          >
+                            ၊
                           </button>
                         </div>
                       </div>
-
-                      {/* Main Subtitle Text */}
-                      {isEditing && onUpdateItem ? (
-                        <div className="space-y-2 pt-1 border-t border-slate-800">
-                          <input
-                            type="text"
-                            value={item.translatedText || ''}
-                            onChange={(e) =>
-                              onUpdateItem(item.id, { translatedText: e.target.value })
-                            }
-                            placeholder="မြန်မာ စာတန်းထိုး..."
-                            className="w-full bg-slate-900 border border-slate-700 rounded-lg p-2 text-xs text-emerald-300 focus:outline-none focus:border-emerald-500"
-                          />
-                          <div className="flex items-center justify-between text-[10px] text-slate-400 gap-1 flex-wrap">
-                            <span>စတင်ချိန်:</span>
-                            <div className="flex items-center space-x-1">
-                              <button
-                                onClick={() => handleSetStartToNow(item.id)}
-                                className="px-1.5 py-0.5 bg-emerald-500/20 text-emerald-300 rounded font-bold"
-                              >
-                                Now
-                              </button>
-                              <button
-                                onClick={() => handleAdjustTime(item.id, 'startMs', -100)}
-                                className="px-1 py-0.5 bg-slate-800 rounded"
-                              >
-                                -100ms
-                              </button>
-                              <button
-                                onClick={() => handleAdjustTime(item.id, 'startMs', 100)}
-                                className="px-1 py-0.5 bg-slate-800 rounded"
-                              >
-                                +100ms
-                              </button>
-                            </div>
-                          </div>
-                          <div className="flex items-center justify-between text-[10px] text-slate-400 gap-1 flex-wrap">
-                            <span>ပြီးဆုံးချိန်:</span>
-                            <div className="flex items-center space-x-1">
-                              <button
-                                onClick={() => handleSetEndToNow(item.id)}
-                                className="px-1.5 py-0.5 bg-amber-500/20 text-amber-300 rounded font-bold"
-                              >
-                                Now
-                              </button>
-                              <button
-                                onClick={() => handleAdjustTime(item.id, 'endMs', -100)}
-                                className="px-1 py-0.5 bg-slate-800 rounded"
-                              >
-                                -100ms
-                              </button>
-                              <button
-                                onClick={() => handleAdjustTime(item.id, 'endMs', 100)}
-                                className="px-1 py-0.5 bg-slate-800 rounded"
-                              >
-                                +100ms
-                              </button>
-                            </div>
-                          </div>
-                          <button
-                            onClick={() => setEditingId(null)}
-                            className="w-full py-1 bg-emerald-500 text-slate-950 font-bold rounded-lg text-[11px] flex items-center justify-center space-x-1"
-                          >
-                            <Check className="w-3 h-3" />
-                            <span>သိမ်းမည်</span>
-                          </button>
-                        </div>
-                      ) : (
-                        <div onClick={() => jumpToTime(item.startMs)} className="cursor-pointer space-y-0.5">
-                          <div className="font-bold text-emerald-300">
-                            {item.translatedText || item.originalText}
-                          </div>
-                          <div className="text-[11px] text-slate-400 truncate">
-                            {item.originalText}
-                          </div>
-                        </div>
-                      )}
                     </div>
-                  );
-                })}
+                  </div>
+                );
+              })}
             </div>
           </div>
         </div>

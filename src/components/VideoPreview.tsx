@@ -74,6 +74,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
   const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
   // Target field to edit: 'translated' (အသစ်/မြန်မာဘာသာ) or 'original' (မူရင်း/အင်္ဂလိပ်)
   const [editTarget, setEditTarget] = useState<'translated' | 'original'>('translated');
+  const [customVideoFileName, setCustomVideoFileName] = useState<string | null>(null);
 
   // Sync playback speed with video element
   useEffect(() => {
@@ -288,6 +289,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
     if (e.target.files && e.target.files[0]) {
       const file = e.target.files[0];
       const url = URL.createObjectURL(file);
+      setCustomVideoFileName(file.name);
       setHasVideoError(false);
       onUpdateVideoConfig({ ...videoConfig, videoUrl: url, isCustomVideo: true });
     }
@@ -447,14 +449,14 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                   ဗီဒီယို ဖိုင် ဖွင့်၍ မရပါ သို့မဟုတ် မူရင်း URL တိုက်ရိုက် မရရှိနိုင်ပါ
                 </div>
                 <p className="text-xs text-slate-400 max-w-md">
-                  အောက်ပါ "Upload MP4/WebM" ခလုတ်မှ မိမိစက်ထဲရှိ Video ဖိုင်ကို ထည့်သွင်းကြည့်ရှုနိုင်သလို သို့မဟုတ် အခြား နမူနာ ဗီဒီယို URL ကို ရွေးချယ်နိုင်ပါသည်။
+                  အောက်ပါ "မိမိ ဗီဒီယိုဖိုင် ထည့်သွင်းမည်" ခလုတ်မှ မိမိစက်ထဲရှိ MKV, MP4, WebM စသည့် Video ဖိုင်များကို ရွေးချယ် ထည့်သွင်း ကြည့်ရှုနိုင်ပါသည်။
                 </p>
                 <label className="mt-2 inline-flex items-center space-x-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold px-4 py-2 rounded-xl cursor-pointer text-xs transition shadow-lg">
                   <Upload className="w-4 h-4" />
-                  <span>မိမိ ဗီဒီယိုဖိုင် ထည့်သွင်းမည်</span>
+                  <span>မိမိ ဗီဒီယိုဖိုင် (MKV/MP4/WebM) ထည့်သွင်းမည်</span>
                   <input
                     type="file"
-                    accept="video/mp4,video/webm"
+                    accept="video/*,.mkv,.mp4,.webm,.mov,.avi,video/x-matroska,video/mkv,video/mp4,video/webm"
                     onChange={handleVideoFileUpload}
                     className="hidden"
                   />
@@ -999,23 +1001,55 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
         <div className="space-y-4">
           {/* Custom Video Source Loader */}
           <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
-            <h3 className="text-xs font-bold text-slate-200 flex items-center space-x-1.5">
-              <Film className="w-4 h-4 text-emerald-400" />
-              <span>ဗီဒီယို ဖိုင် ရွေးချယ်ရန် (Video Source)</span>
-            </h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-xs font-bold text-slate-200 flex items-center space-x-1.5">
+                <Film className="w-4 h-4 text-emerald-400" />
+                <span>ဗီဒီယို ဖိုင် ရွေးချယ်ရန် (Video Source)</span>
+              </h3>
+              {customVideoFileName && (
+                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-mono font-bold border border-emerald-500/30 uppercase">
+                  {customVideoFileName.split('.').pop() || 'VIDEO'}
+                </span>
+              )}
+            </div>
 
-            <label className="flex items-center justify-center space-x-2 border border-dashed border-slate-700 hover:border-emerald-500 bg-slate-950 p-3 rounded-xl cursor-pointer text-xs text-slate-300 transition">
-              <Upload className="w-4 h-4 text-emerald-400" />
-              <span>မိမိ ဗီဒီယိုဖိုင် ထည့်မည် (Upload MP4/WebM)</span>
-              <input
-                type="file"
-                accept="video/mp4,video/webm"
-                onChange={handleVideoFileUpload}
-                className="hidden"
-              />
-            </label>
+            {customVideoFileName ? (
+              <div className="bg-slate-950 p-2.5 rounded-xl border border-emerald-500/30 space-y-2">
+                <div className="flex items-center justify-between text-xs">
+                  <div className="flex items-center space-x-2 truncate mr-2">
+                    <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                    <span className="text-slate-200 font-medium truncate text-[11px] font-mono">
+                      {customVideoFileName}
+                    </span>
+                  </div>
+                  <label className="text-[10px] text-emerald-400 hover:text-emerald-300 font-bold cursor-pointer underline whitespace-nowrap">
+                    လဲမည်
+                    <input
+                      type="file"
+                      accept="video/*,.mkv,.mp4,.webm,.mov,.avi,video/x-matroska,video/mkv,video/mp4,video/webm"
+                      onChange={handleVideoFileUpload}
+                      className="hidden"
+                    />
+                  </label>
+                </div>
+              </div>
+            ) : (
+              <label className="flex items-center justify-center space-x-2 border border-dashed border-slate-700 hover:border-emerald-500 bg-slate-950 p-3 rounded-xl cursor-pointer text-xs text-slate-300 transition">
+                <Upload className="w-4 h-4 text-emerald-400" />
+                <span>မိမိ ဗီဒီယိုဖိုင် ထည့်မည် (MKV / MP4 / WebM)</span>
+                <input
+                  type="file"
+                  accept="video/*,.mkv,.mp4,.webm,.mov,.avi,video/x-matroska,video/mkv,video/mp4,video/webm"
+                  onChange={handleVideoFileUpload}
+                  className="hidden"
+                />
+              </label>
+            )}
 
-
+            <div className="text-[10px] text-slate-400 flex items-center space-x-1.5 bg-slate-950/60 px-2.5 py-1.5 rounded-lg border border-slate-800/80">
+              <Sparkles className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+              <span>MKV, MP4, WebM, MOV ဗီဒီယိုဖိုင်များ တိုက်ရိုက် ကြည့်ရှု အသုံးပြုနိုင်ပါသည်</span>
+            </div>
           </div>
 
           {/* Subtitle List with Direct Inline Editable Textboxes */}

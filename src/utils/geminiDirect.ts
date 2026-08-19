@@ -18,6 +18,52 @@ interface TranslationSettingsInput {
   honorificLevel?: string;
 }
 
+/**
+ * Validates whether a Gemini API key is functional
+ */
+export async function testGeminiApiKey(apiKey: string): Promise<{ success: boolean; message?: string; error?: string }> {
+  const keyToTest = apiKey?.trim();
+  if (!keyToTest) {
+    return { success: false, error: 'API Key မထည့်သွင်းရသေးပါ' };
+  }
+
+  const modelsToTest = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-lite'];
+
+  for (const model of modelsToTest) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+        model
+      )}:generateContent?key=${encodeURIComponent(keyToTest)}`;
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: 'Hello, reply with 1 word: OK' }] }],
+        }),
+      });
+
+      if (res.ok) {
+        return { success: true, message: `API Key မှန်ကန်စွာ အလုပ်လုပ်ပါသည် (${model})` };
+      }
+
+      const errData = await res.json().catch(() => ({}));
+      const errMsg = errData.error?.message || `HTTP ${res.status}`;
+
+      if (res.status === 400 && errMsg.includes('API_KEY_INVALID')) {
+        return { success: false, error: 'ထည့်သွင်းထားသော Gemini API Key မှားယွင်းနေပါသည်' };
+      }
+      if (res.status === 429 || errMsg.includes('quota') || errMsg.includes('RESOURCE_EXHAUSTED')) {
+        return { success: false, error: 'API Key အသုံးပြုမှု ပမာဏ (Quota / Rate Limit) ပြည့်နေပါသည်' };
+      }
+    } catch (err: any) {
+      console.warn(`Test key with model ${model} failed:`, err);
+    }
+  }
+
+  return { success: false, error: 'Gemini API သို့ ချိတ်ဆက်၍ မရပါ (Key သို့မဟုတ် Network စစ်ဆေးပါ)' };
+}
+
 export async function translateDirectlyViaGemini(
   items: SubtitleItemInput[],
   apiKey: string,
@@ -26,26 +72,27 @@ export async function translateDirectlyViaGemini(
 ): Promise<Array<{ id: number; translatedText: string }>> {
   // Check key: custom user key OR admin default key from localStorage
   const effectiveKey =
-    apiKey ||
+    apiKey?.trim() ||
+    localStorage.getItem('user_gemini_api_key') ||
     localStorage.getItem('admin_default_gemini_api_key') ||
     '';
 
   if (!effectiveKey) {
     throw new Error(
-      'Gemini API Key ထည့်သွင်းပေးပါ။ (Google AI Studio မှ အခမဲ့ ရယူနိုင်ပါသည်။)'
+      'Gemini API Key ထည့်သွင်းပေးရန် လိုအပ်ပါသည်။ (Google AI Studio မှ အခမဲ့ ရယူနိုင်ပါသည်)'
     );
   }
 
   // Supported models to fallback if one model is rate-limited or unavailable
   const modelsToTry = [
-    settings.model || 'gemini-2.5-flash',
     'gemini-2.0-flash',
     'gemini-1.5-flash',
-    'gemini-2.5-flash-lite',
+    'gemini-2.0-flash-lite',
+    'gemini-1.5-pro',
   ];
 
-  // Batch size 30 items per request to reduce request count and stay within TPM/RPM limits
-  const CHUNK_SIZE = 30;
+  // Batch size 25 items per request to reduce request count and stay within TPM/RPM limits
+  const CHUNK_SIZE = 25;
   const results: Array<{ id: number; translatedText: string }> = [];
 
   for (let i = 0; i < items.length; i += CHUNK_SIZE) {
@@ -71,6 +118,7 @@ CRITICAL RULES:
     let success = false;
     let attempt = 0;
     const maxAttempts = 6;
+    let lastErrorMsg = '';
 
     while (!success && attempt < maxAttempts) {
       attempt++;
@@ -95,7 +143,7 @@ CRITICAL RULES:
 
         if (res.status === 429) {
           // Free Tier Rate limit backoff
-          const waitMs = Math.min(30000, attempt * 6000);
+          const waitMs = Math.min(25000, attempt * 5000);
           console.warn(`[Gemini Free Tier] Rate limit (429) hit on model ${currentModel}. Waiting ${waitMs / 1000}s...`);
           await new Promise((r) => setTimeout(r, waitMs));
           continue;
@@ -104,12 +152,15 @@ CRITICAL RULES:
         if (!res.ok) {
           const errObj = await res.json().catch(() => ({}));
           const errMsg = errObj.error?.message || `HTTP ${res.status}`;
+          lastErrorMsg = errMsg;
           if (errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('RESOURCE_EXHAUSTED')) {
-            const waitMs = Math.min(30000, attempt * 6000);
+            const waitMs = Math.min(25000, attempt * 5000);
             await new Promise((r) => setTimeout(r, waitMs));
             continue;
           }
-          throw new Error(errMsg);
+          // If model not found or bad request on this model, continue to next model
+          console.warn(`[Gemini Direct] Model ${currentModel} returned ${errMsg}. Trying next model...`);
+          continue;
         }
 
         const data = await res.json();
@@ -134,18 +185,23 @@ CRITICAL RULES:
           onProgress(Math.round((currentCount / items.length) * 100));
         }
       } catch (err: any) {
+        lastErrorMsg = err.message || '';
         if (attempt >= maxAttempts) {
           throw new Error(
-            `Gemini Free API Key Rate Limit: ${err.message || 'ခေတ္တစောင့်ပြီး ပြန်လည်ကြိုးစားပေးပါ'}`
+            `Gemini API Error: ${err.message || lastErrorMsg || 'ခေတ္တစောင့်ပြီး ပြန်လည်ကြိုးစားပေးပါ'}`
           );
         }
-        await new Promise((r) => setTimeout(r, 4000));
+        await new Promise((r) => setTimeout(r, 3000));
       }
     }
 
-    // Pacing delay (3.5s) between requests for Free Tier API keys (15 RPM limit)
+    if (!success) {
+      throw new Error(`Gemini API ဘာသာပြန်ခြင်း မအောင်မြင်ပါ: ${lastErrorMsg || 'API Key စစ်ဆေးပေးပါ'}`);
+    }
+
+    // Pacing delay (2.5s) between requests for Free Tier API keys (15 RPM limit)
     if (i + CHUNK_SIZE < items.length) {
-      await new Promise((r) => setTimeout(r, 3500));
+      await new Promise((r) => setTimeout(r, 2500));
     }
   }
 

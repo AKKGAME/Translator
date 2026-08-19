@@ -18,6 +18,8 @@ import {
   Plus,
   Trash2,
   GitMerge,
+  Key,
+  ExternalLink,
 } from 'lucide-react';
 
 interface SubtitleTableProps {
@@ -33,6 +35,7 @@ interface SubtitleTableProps {
   activeItemIndex?: number;
   onSelectSubItem?: (item: SubtitleItem) => void;
   onOpenSettings?: () => void;
+  hasApiKey?: boolean;
 }
 
 export const SubtitleTable: React.FC<SubtitleTableProps> = ({
@@ -48,6 +51,7 @@ export const SubtitleTable: React.FC<SubtitleTableProps> = ({
   activeItemIndex,
   onSelectSubItem,
   onOpenSettings,
+  hasApiKey = false,
 }) => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState<'all' | 'pending' | 'completed' | 'error'>('all');
@@ -174,11 +178,15 @@ export const SubtitleTable: React.FC<SubtitleTableProps> = ({
           {onOpenSettings && (
             <button
               onClick={onOpenSettings}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl border border-slate-700 transition"
-              title="ဘာသာပြန် ဆက်တင်များ ပြင်ဆင်ရန်"
+              className={`flex items-center space-x-1.5 px-3 py-1.5 rounded-xl border text-xs font-semibold transition ${
+                hasApiKey
+                  ? 'bg-slate-800 hover:bg-slate-700 text-slate-300 border-slate-700'
+                  : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/40 animate-pulse'
+              }`}
+              title="Gemini API Key နှင့် ဘာသာပြန် ဆက်တင်များ ပြင်ဆင်ရန်"
             >
-              <Settings className="w-3.5 h-3.5 text-emerald-400" />
-              <span>ဆက်တင်</span>
+              <Key className={`w-3.5 h-3.5 ${hasApiKey ? 'text-emerald-400' : 'text-amber-400'}`} />
+              <span>{hasApiKey ? 'API Key / ဆက်တင်' : 'API Key ထည့်ရန်'}</span>
             </button>
           )}
 
@@ -241,6 +249,25 @@ export const SubtitleTable: React.FC<SubtitleTableProps> = ({
           )}
         </div>
       </div>
+
+      {/* Missing API Key Helper Banner */}
+      {!hasApiKey && onOpenSettings && (
+        <div className="bg-gradient-to-r from-amber-500/15 via-amber-500/10 to-transparent border border-amber-500/30 rounded-xl p-3 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-2.5">
+          <div className="flex items-center space-x-2.5 text-xs text-amber-200">
+            <Key className="w-4 h-4 text-amber-400 flex-shrink-0" />
+            <span>
+              <b>Gemini API Key မထည့်သွင်းရသေးပါ။</b> AI ဘာသာပြန်ရန် မိမိ၏ Free API Key ကို ထည့်သွင်းပေးပါ (Google AI Studio မှ အခမဲ့ ရယူနိုင်ပါသည်)။
+            </span>
+          </div>
+          <button
+            onClick={onOpenSettings}
+            className="px-3 py-1.5 bg-amber-500 hover:bg-amber-400 text-slate-950 font-bold text-xs rounded-lg transition whitespace-nowrap shadow-sm flex items-center space-x-1"
+          >
+            <Key className="w-3.5 h-3.5" />
+            <span>API Key ထည့်သွင်းမည်</span>
+          </button>
+        </div>
+      )}
 
       {/* Progress Bar */}
       <div className="bg-slate-900 border border-slate-800 rounded-xl p-3 flex items-center space-x-4">

@@ -234,7 +234,7 @@ app.delete('/api/admin/saved-subtitles/:id', (req, res) => {
 function getGeminiClient(apiKeyOverride?: string): GoogleGenAI {
   const keyToUse = (apiKeyOverride && apiKeyOverride.trim()) || process.env.GEMINI_API_KEY;
   if (!keyToUse) {
-    throw new Error('Gemini API Key မရှိပါ။ ဆက်တင်များ (Settings) တွင် မိမိ၏ Gemini API Key ထည့်သွင်းပေးပါ သို့မဟုတ် စနစ်၏ Key ကို အသုံးပြုပါ။');
+    throw new Error('Gemini API Key ထည့်သွင်းပေးရန် လိုအပ်ပါသည်။ ဆက်တင်များ (Settings) တွင် မိမိ၏ Gemini API Key ထည့်သွင်းပေးပါ (Google AI Studio မှ အခမဲ့ ရယူနိုင်ပါသည်)');
   }
   return new GoogleGenAI({
     apiKey: keyToUse.trim(),
@@ -252,6 +252,38 @@ app.get('/api/health', (req, res) => {
     status: 'ok',
     hasApiKey: Boolean(process.env.GEMINI_API_KEY),
   });
+});
+
+// Verify Gemini API Key Endpoint
+app.post('/api/verify-gemini-key', async (req, res) => {
+  try {
+    const { apiKey } = req.body;
+    const keyToTest = (apiKey && typeof apiKey === 'string' && apiKey.trim()) || process.env.GEMINI_API_KEY;
+
+    if (!keyToTest) {
+      return res.status(400).json({ valid: false, error: 'Gemini API Key ထည့်သွင်းထားခြင်း မရှိပါ' });
+    }
+
+    const ai = new GoogleGenAI({ apiKey: keyToTest.trim() });
+    const response = await ai.models.generateContent({
+      model: 'gemini-2.0-flash',
+      contents: 'Reply with: OK',
+    });
+
+    if (response.text) {
+      return res.json({ valid: true, message: 'Gemini API Key မှန်ကန်စွာ အလုပ်လုပ်ပါသည် (gemini-2.0-flash)' });
+    }
+    return res.status(400).json({ valid: false, error: 'API မှ တုံ့ပြန်မှု မရရှိပါ' });
+  } catch (err: any) {
+    console.error('Error verifying Gemini API key:', err);
+    let errMsg = err.message || 'API Key စစ်ဆေး၍ မရပါ';
+    if (errMsg.includes('API_KEY_INVALID') || errMsg.includes('400')) {
+      errMsg = 'ထည့်သွင်းထားသော Gemini API Key မှားယွင်းနေပါသည်';
+    } else if (errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('RESOURCE_EXHAUSTED')) {
+      errMsg = 'API Key အသုံးပြုမှု ပမာဏ (Quota/Rate Limit) ပြည့်နေပါသည်';
+    }
+    return res.status(400).json({ valid: false, error: errMsg });
+  }
 });
 
 // Batch Translate Subtitles API Endpoint
@@ -385,12 +417,10 @@ ${JSON.stringify(items.map((i: any) => ({ id: i.id, text: i.text })))}`;
 
     // Supported model fallback order for Free and Paid Gemini keys
     const modelsToTry = [
-      'gemini-2.5-flash',
       'gemini-2.0-flash',
       'gemini-1.5-flash',
-      'gemini-2.5-flash-lite',
-      'gemini-3.6-flash',
-      'gemini-flash-latest',
+      'gemini-2.0-flash-lite',
+      'gemini-1.5-pro',
     ];
 
     let pass = 0;

@@ -388,46 +388,69 @@ export default function App() {
     if (!item) return;
 
     setItems((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, status: 'translating' } : i))
+      prev.map((i) => (i.id === id ? { ...i, status: 'translating', errorMessage: undefined } : i))
     );
 
     try {
-      const res = await fetch('/api/translate-subtitles', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          items: [{ id: item.id, index: item.index, text: item.originalText }],
-          apiKey: translationSettings.customApiKey,
-          accessCode: translationSettings.accessCode,
-          settings: {
-            style: translationSettings.style,
-            tone: translationSettings.tone,
-            glossary: translationSettings.glossary,
-            preserveTags: translationSettings.preserveTags,
-            useBurmeseDigits: translationSettings.useBurmeseDigits,
-            speakerNameHandling: translationSettings.speakerNameHandling,
-            properNounsMode: translationSettings.properNounsMode,
-            soundEffectsHandling: translationSettings.soundEffectsHandling,
-            honorificStyle: translationSettings.honorificStyle,
-            conciseness: translationSettings.conciseness,
-            customPromptNote: translationSettings.customPromptNote,
-          },
-        }),
-      });
+      let translatedText = '';
 
-      if (!res.ok) throw new Error('Failed to translate');
+      try {
+        const res = await fetch('/api/translate-subtitles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            items: [{ id: item.id, index: item.index, text: item.originalText }],
+            apiKey: translationSettings.customApiKey,
+            accessCode: translationSettings.accessCode,
+            settings: {
+              style: translationSettings.style,
+              tone: translationSettings.tone,
+              glossary: translationSettings.glossary,
+              preserveTags: translationSettings.preserveTags,
+              useBurmeseDigits: translationSettings.useBurmeseDigits,
+              speakerNameHandling: translationSettings.speakerNameHandling,
+              properNounsMode: translationSettings.properNounsMode,
+              soundEffectsHandling: translationSettings.soundEffectsHandling,
+              honorificStyle: translationSettings.honorificStyle,
+              conciseness: translationSettings.conciseness,
+              customPromptNote: translationSettings.customPromptNote,
+            },
+          }),
+        });
 
-      const data = await res.json();
-      const match = data.translations?.[0];
+        const contentType = res.headers.get('content-type') || '';
+        if (res.ok && contentType.includes('application/json')) {
+          const data = await res.json();
+          translatedText = data.translations?.[0]?.translatedText || '';
+        } else {
+          // Fallback to direct client-side translation
+          const fallbackRes = await translateDirectlyViaGemini(
+            [{ id: item.id, text: item.originalText }],
+            translationSettings.customApiKey || '',
+            translationSettings
+          );
+          translatedText = fallbackRes?.[0]?.translatedText || '';
+        }
+      } catch (fetchErr) {
+        // Direct client fallback
+        const fallbackRes = await translateDirectlyViaGemini(
+          [{ id: item.id, text: item.originalText }],
+          translationSettings.customApiKey || '',
+          translationSettings
+        );
+        translatedText = fallbackRes?.[0]?.translatedText || '';
+      }
 
-      if (match) {
+      if (translatedText) {
         setItems((prev) =>
           prev.map((i) =>
             i.id === id
-              ? { ...i, translatedText: match.translatedText, status: 'completed' }
+              ? { ...i, translatedText, status: 'completed', errorMessage: undefined }
               : i
           )
         );
+      } else {
+        throw new Error('ဘာသာပြန်ဆို၍ မရပါ');
       }
     } catch (err: any) {
       setItems((prev) =>
@@ -443,6 +466,10 @@ export default function App() {
     setItems(updatedItems);
   };
 
+  const hasApiKey = Boolean(
+    translationSettings.customApiKey && translationSettings.customApiKey.trim().length > 10
+  );
+
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500/30 selection:text-emerald-200">
       <Header
@@ -456,6 +483,8 @@ export default function App() {
         onExportClick={() => setIsExportOpen(true)}
         onTimeShiftClick={() => setIsShiftOpen(true)}
         onDonateClick={() => setIsDonationModalOpen(true)}
+        hasApiKey={hasApiKey}
+        onSettingsClick={() => setIsSettingsModalOpen(true)}
       />
 
       <main className="flex-1 pb-12">
@@ -486,6 +515,7 @@ export default function App() {
                 activeItemIndex={activeSubIndex}
                 onSelectSubItem={(item) => setActiveSubIndex(item.index)}
                 onOpenSettings={() => setIsSettingsModalOpen(true)}
+                hasApiKey={hasApiKey}
               />
             )}
 

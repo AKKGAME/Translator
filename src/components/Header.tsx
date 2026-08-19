@@ -13,6 +13,8 @@ import {
   Square,
   Heart,
   ShieldAlert,
+  Key,
+  CheckCircle2,
 } from 'lucide-react';
 
 interface HeaderProps {
@@ -23,6 +25,8 @@ interface HeaderProps {
   onExportClick: () => void;
   onTimeShiftClick: () => void;
   onDonateClick: () => void;
+  hasApiKey?: boolean;
+  onSettingsClick?: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
@@ -33,6 +37,8 @@ export const Header: React.FC<HeaderProps> = ({
   onExportClick,
   onTimeShiftClick,
   onDonateClick,
+  hasApiKey = false,
+  onSettingsClick,
 }) => {
   return (
     <header className="bg-slate-900 border-b border-slate-800 sticky top-0 z-30 shadow-md">
@@ -88,6 +94,22 @@ export const Header: React.FC<HeaderProps> = ({
 
           {/* Action Buttons */}
           <div className="flex items-center space-x-1.5 sm:space-x-2">
+            {onSettingsClick && (
+              <button
+                onClick={onSettingsClick}
+                className={`flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg text-xs font-semibold border transition shadow-sm ${
+                  hasApiKey
+                    ? 'bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 border-emerald-500/30'
+                    : 'bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 border-amber-500/30 animate-pulse'
+                }`}
+                title={hasApiKey ? 'Gemini API Key ထည့်သွင်းထားပြီး (Settings)' : 'Gemini API Key ထည့်ရန် (Settings)'}
+              >
+                <Key className={`w-3.5 h-3.5 ${hasApiKey ? 'text-emerald-400' : 'text-amber-400'}`} />
+                <span className="hidden sm:inline">{hasApiKey ? 'API Key ချိတ်ပြီး' : 'API Key ထည့်ရန်'}</span>
+                <span className="sm:hidden">{hasApiKey ? 'Key' : 'Key ထည့်'}</span>
+              </button>
+            )}
+
             <button
               onClick={onDonateClick}
               className="flex items-center space-x-1.5 px-2.5 sm:px-3 py-1.5 rounded-lg bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 font-semibold text-xs border border-rose-500/30 transition shadow-sm"

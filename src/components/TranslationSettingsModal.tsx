@@ -11,7 +11,13 @@ import {
   MessageSquare,
   BookOpen,
   Volume2,
+  AlertCircle,
+  ExternalLink,
+  RefreshCw,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
+import { testGeminiApiKey } from '../utils/geminiDirect';
 
 interface TranslationSettingsModalProps {
   isOpen: boolean;
@@ -30,11 +36,75 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
 }) => {
   const [translationMode, setTranslationMode] = useState<'ai' | 'manual'>('ai');
   const [showAccessCode, setShowAccessCode] = useState(false);
+  const [isTestingKey, setIsTestingKey] = useState(false);
+  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   if (!isOpen) return null;
 
   const handleStyleChange = (style: TranslationStyle) => {
     onUpdateSettings({ ...settings, style });
+  };
+
+  const handleTestApiKey = async () => {
+    const keyToTest = settings.customApiKey?.trim();
+    if (!keyToTest) {
+      setTestResult({
+        success: false,
+        message: 'ကျေးဇူးပြု၍ Gemini API Key အရင် ထည့်သွင်းပေးပါ',
+      });
+      return;
+    }
+
+    setIsTestingKey(true);
+    setTestResult(null);
+
+    try {
+      // First try server verification endpoint
+      const res = await fetch('/api/verify-gemini-key', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ apiKey: keyToTest }),
+      });
+
+      const contentType = res.headers.get('content-type') || '';
+      if (res.ok && contentType.includes('application/json')) {
+        const data = await res.json();
+        setTestResult({
+          success: true,
+          message: data.message || 'Gemini API Key မှန်ကန်စွာ ချိတ်ဆက်ပြီးပါပြီ!',
+        });
+      } else {
+        // Fallback to direct client-side test
+        const directRes = await testGeminiApiKey(keyToTest);
+        if (directRes.success) {
+          setTestResult({
+            success: true,
+            message: directRes.message || 'Gemini API Key မှန်ကန်စွာ ချိတ်ဆက်ပြီးပါပြီ!',
+          });
+        } else {
+          setTestResult({
+            success: false,
+            message: directRes.error || 'API Key မှားယွင်းနေပါသည်',
+          });
+        }
+      }
+    } catch (err: any) {
+      // Direct client test fallback
+      const directRes = await testGeminiApiKey(keyToTest);
+      if (directRes.success) {
+        setTestResult({
+          success: true,
+          message: directRes.message || 'Gemini API Key မှန်ကန်စွာ ချိတ်ဆက်ပြီးပါပြီ!',
+        });
+      } else {
+        setTestResult({
+          success: false,
+          message: directRes.error || err.message || 'API Key စစ်ဆေး၍ မရပါ',
+        });
+      }
+    } finally {
+      setIsTestingKey(false);
+    }
   };
 
   const handleConfirmAI = () => {
@@ -45,6 +115,8 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
   const handleConfirmManual = () => {
     onClose();
   };
+
+  const hasApiKey = Boolean(settings.customApiKey && settings.customApiKey.trim().length > 10);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
@@ -57,10 +129,10 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
             </div>
             <div>
               <h3 className="text-base font-bold text-slate-100">
-                ဘာသာပြန် နည်းလမ်းနှင့် ဆက်တင်များ (Translation Options)
+                ဘာသာပြန် ဆက်တင်များ (Translation Options)
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                AI ဖြင့် အလိုအလျောက် ဘာသာပြန်မည် သို့မဟုတ် ကိုယ်တိုင် တိုက်ရိုက် ပြင်ဆင်မည်ကို ရွေးချယ်ပါ
+                AI ဖြင့် အလိုအလျောက် ဘာသာပြန်မည် သို့မဟုတ် ကိုယ်တိုင် ပြင်ဆင်မည်ကို ရွေးချယ်ပါ
               </p>
             </div>
           </div>
@@ -104,7 +176,99 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
         {/* Mode 1: AI Translation Settings */}
         {translationMode === 'ai' && (
           <div className="space-y-4">
-            {/* 1. Genre / Style Selection */}
+            {/* 1. Gemini API Key Input (Prominent & First) */}
+            <div className="bg-slate-950 p-4 rounded-xl border border-emerald-500/30 space-y-3 shadow-sm">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center space-x-2">
+                  <Key className="w-4 h-4 text-emerald-400" />
+                  <label className="text-xs font-bold text-slate-100">
+                    မိမိ၏ Gemini API Key (အခမဲ့ ရယူနိုင်ပါသည်)
+                  </label>
+                </div>
+                {hasApiKey ? (
+                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-bold border border-emerald-500/30 flex items-center space-x-1">
+                    <Check className="w-3 h-3 text-emerald-400" />
+                    <span>Key ထည့်သွင်းထားပြီး</span>
+                  </span>
+                ) : (
+                  <span className="text-[10px] bg-amber-500/20 text-amber-300 px-2 py-0.5 rounded-full font-bold border border-amber-500/30 flex items-center space-x-1">
+                    <AlertCircle className="w-3 h-3 text-amber-400" />
+                    <span>Key လိုအပ်ပါသည်</span>
+                  </span>
+                )}
+              </div>
+
+              <div className="relative flex items-center">
+                <input
+                  type={showAccessCode ? 'text' : 'password'}
+                  value={settings.customApiKey || ''}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    onUpdateSettings({ ...settings, customApiKey: val });
+                    setTestResult(null);
+                  }}
+                  placeholder="AIzaSy... (Google AI Studio Gemini API Key ထည့်ပါ)"
+                  className="w-full bg-slate-900 border border-slate-800 focus:border-emerald-500 rounded-xl pl-3 pr-20 py-2.5 text-xs font-mono text-slate-100 placeholder:text-slate-600 focus:outline-none"
+                />
+                <div className="absolute right-2 flex items-center space-x-1">
+                  <button
+                    type="button"
+                    onClick={() => setShowAccessCode(!showAccessCode)}
+                    className="p-1.5 text-slate-400 hover:text-slate-200 rounded transition"
+                    title={showAccessCode ? 'ကွယ်မည်' : 'ကြည့်မည်'}
+                  >
+                    {showAccessCode ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleTestApiKey}
+                    disabled={isTestingKey || !settings.customApiKey?.trim()}
+                    className="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 border border-emerald-500/40 rounded-lg text-[11px] font-bold transition disabled:opacity-40 disabled:pointer-events-none flex items-center space-x-1"
+                  >
+                    {isTestingKey ? (
+                      <>
+                        <RefreshCw className="w-3 h-3 animate-spin text-emerald-400" />
+                        <span>စစ်ဆေးနေ...</span>
+                      </>
+                    ) : (
+                      <span>စစ်ဆေးမည်</span>
+                    )}
+                  </button>
+                </div>
+              </div>
+
+              {testResult && (
+                <div
+                  className={`p-2.5 rounded-lg text-xs flex items-center space-x-2 border ${
+                    testResult.success
+                      ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
+                      : 'bg-rose-950/60 border-rose-500/40 text-rose-300'
+                  }`}
+                >
+                  {testResult.success ? (
+                    <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+                  ) : (
+                    <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
+                  )}
+                  <span>{testResult.message}</span>
+                </div>
+              )}
+
+              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between text-[11px] text-slate-400 pt-1 gap-2 border-t border-slate-800/80">
+                <span>Google AI Studio တွင် အခမဲ့ (Free API Key) ရယူနိုင်ပါသည်:</span>
+                <a
+                  href="https://aistudio.google.com/app/apikey"
+                  target="_blank"
+                  rel="noreferrer"
+                  className="inline-flex items-center space-x-1 text-emerald-400 hover:text-emerald-300 font-bold underline whitespace-nowrap"
+                >
+                  <span>API Key ရယူရန် (aistudio.google.com)</span>
+                  <ExternalLink className="w-3 h-3 ml-0.5" />
+                </a>
+              </div>
+            </div>
+
+            {/* 2. Genre / Style Selection */}
             <div className="space-y-2">
               <label className="text-xs font-bold text-slate-200 flex items-center space-x-1.5">
                 <Film className="w-4 h-4 text-emerald-400" />
@@ -135,22 +299,22 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
               </div>
             </div>
 
-            {/* 2. Tone & Speaker Options */}
+            {/* 3. Tone & Speaker Options */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
               <div>
                 <label className="text-[11px] font-semibold text-slate-300 block mb-1">
                   စကားပြော အသုံးအနှုန်း (Tone)
                 </label>
                 <select
-                  value={settings.tone || 'natural'}
+                  value={settings.tone || 'neutral'}
                   onChange={(e) =>
                     onUpdateSettings({ ...settings, tone: e.target.value as any })
                   }
                   className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
                 >
-                  <option value="natural">သဘာဝကျသော မြန်မာစကားပြော (Spoken)</option>
+                  <option value="neutral">သဘာဝကျသော မြန်မာစကားပြော (Spoken)</option>
                   <option value="polite">ယဉ်ကျေးသော စကားပြော (Polite Spoken)</option>
-                  <option value="formal">တရားဝင် စာပေဟန် (Formal Written)</option>
+                  <option value="dramatic">ရုပ်ရှင်ဆန်သော ဒရာမာဟန် (Cinematic Dramatic)</option>
                 </select>
               </div>
 
@@ -159,20 +323,20 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
                   နာမ်စား သုံးစွဲမှု (Honorifics / Pronouns)
                 </label>
                 <select
-                  value={settings.honorificLevel || 'standard'}
+                  value={settings.honorificStyle || 'polite'}
                   onChange={(e) =>
-                    onUpdateSettings({ ...settings, honorificLevel: e.target.value as any })
+                    onUpdateSettings({ ...settings, honorificStyle: e.target.value as any })
                   }
                   className="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
                 >
-                  <option value="standard">ပုံမှန် (ငါ/နင်၊ ကျွန်တော်/မင်း)</option>
-                  <option value="polite">ယဉ်ကျေးသော (ကျွန်တော်/ကျွန်မ/သင်)</option>
-                  <option value="intimate">ရင်းနှီးသော (မောင်/မ၊ အစ်ကို/ညီမ)</option>
+                  <option value="polite">ယဉ်ကျေးသော (ကျွန်တော်/ကျွန်မ/သင်/ပါသည်)</option>
+                  <option value="intimate">ရင်းနှီးသော (မောင်/မ၊ အစ်ကို/ညီမ၊ ငါ/နင်)</option>
+                  <option value="neutral">ကြားနေ (သူ/မိမိ)</option>
                 </select>
               </div>
             </div>
 
-            {/* 3. Custom AI Prompt Instructions */}
+            {/* 4. Custom AI Prompt Instructions */}
             <div>
               <label className="text-xs font-bold text-slate-200 flex items-center space-x-1.5 mb-1.5">
                 <MessageSquare className="w-4 h-4 text-emerald-400" />
@@ -187,35 +351,6 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
                 placeholder="ဥပမာ - စာကြောင်းတိုတို သုံးပါ၊ 'OK' ကို 'အိုကေ' ဟုပြန်ပါ..."
                 className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2.5 text-xs text-slate-100 focus:outline-none focus:border-emerald-500"
               />
-            </div>
-
-            {/* 4. Gemini API Key (Optional) */}
-            <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2">
-              <div className="flex items-center justify-between">
-                <label className="text-xs font-bold text-slate-200 flex items-center space-x-1.5">
-                  <Key className="w-4 h-4 text-amber-400" />
-                  <span>မိမိပိုင် Gemini API Key (Free API Key သုံးနိုင်ပါသည်):</span>
-                </label>
-                <button
-                  type="button"
-                  onClick={() => setShowAccessCode(!showAccessCode)}
-                  className="text-[10px] text-emerald-400 hover:underline"
-                >
-                  {showAccessCode ? 'ကွယ်မည်' : 'ကြည့်မည်'}
-                </button>
-              </div>
-              <input
-                type={showAccessCode ? 'text' : 'password'}
-                value={settings.customApiKey || ''}
-                onChange={(e) =>
-                  onUpdateSettings({ ...settings, customApiKey: e.target.value })
-                }
-                placeholder="AI Studio Gemini Key ထည့်ပါ (မထည့်ပါက Server Key သုံးမည်)..."
-                className="w-full bg-slate-900 border border-slate-800 rounded-xl px-3 py-2 text-xs font-mono text-slate-100 focus:outline-none focus:border-emerald-500"
-              />
-              <p className="text-[11px] text-slate-400 leading-normal">
-                💡 <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noreferrer" className="text-emerald-400 underline font-semibold">aistudio.google.com</a> မှ အခမဲ့ (Free API Key) ရယူအသုံးပြုနိုင်ပါသည်။ Free API Key သုံးပါက Rate Limit မမိစေရန် အက်ပ်မှ အလိုအလျောက် ချိန်ညှိ ဘာသာပြန်ပေးမည် ဖြစ်ပါသည်။
-              </p>
             </div>
           </div>
         )}
@@ -258,7 +393,7 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
             onClick={onClose}
             className="w-full sm:w-auto px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
           >
-            မလုပ်ဆောင်သေးပါ
+            ပိတ်မည်
           </button>
 
           {translationMode === 'ai' ? (

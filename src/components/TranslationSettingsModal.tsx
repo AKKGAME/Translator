@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { TranslationSettings, TranslationStyle } from '../types';
+import { TranslationSettings, TranslationStyle, SpeakerNameHandling, ProperNounsMode } from '../types';
 import {
   Settings,
   Sparkles,
@@ -16,6 +16,10 @@ import {
   RefreshCw,
   Eye,
   EyeOff,
+  UserCheck,
+  UserX,
+  Globe,
+  Tag,
 } from 'lucide-react';
 import { testGeminiApiKey } from '../utils/geminiDirect';
 
@@ -268,7 +272,123 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
               </div>
             </div>
 
-            {/* 2. Genre / Style Selection */}
+            {/* 2. Speaker Name Handling (ဘယ်သူပြောလဲ အမည်ဖြုတ်မလား/ထားမလား) */}
+            <div className="bg-slate-950 p-4 rounded-xl border border-indigo-500/30 space-y-2.5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-indigo-300 flex items-center space-x-1.5">
+                  <UserCheck className="w-4 h-4 text-indigo-400" />
+                  <span>ပြောသူအမည်များ ကိုင်တွယ်ပုံ (Speaker Names in Subtitles):</span>
+                </label>
+                <span className="text-[10px] text-slate-400">ဥပမာ - [JOHN]: Hello / ANNOUNCER: Welcome</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
+                {[
+                  {
+                    id: 'omit',
+                    label: 'အမည် ဖြုတ်မည် (Remove)',
+                    desc: 'ပြောသူအမည်ကို ဖယ်ရှားပြီး စကားပြောသီးသန့်သာ ပြန်မည်',
+                    example: '[JOHN]: Hello -> မင်္ဂလာပါ',
+                    badge: 'အကြံပြုချက်',
+                  },
+                  {
+                    id: 'transliterate',
+                    label: 'မြန်မာသံထွက် (Phonetic)',
+                    desc: 'ပြောသူအမည်ကို မြန်မာစာလုံးဖြင့် ပြောင်းမည်',
+                    example: 'JOHN: Hello -> ဂျွန်: မင်္ဂလာပါ',
+                  },
+                  {
+                    id: 'keep_english',
+                    label: 'အင်္ဂလိပ် မူရင်း (Keep Eng)',
+                    desc: 'ပြောသူအမည်ကို အင်္ဂလိပ်စာလုံးအတိုင်း မူရင်းထားမည်',
+                    example: 'JOHN: Hello -> JOHN: မင်္ဂလာပါ',
+                  },
+                ].map((sp) => (
+                  <button
+                    key={sp.id}
+                    type="button"
+                    onClick={() =>
+                      onUpdateSettings({
+                        ...settings,
+                        speakerNameHandling: sp.id as SpeakerNameHandling,
+                      })
+                    }
+                    className={`p-3 rounded-xl border text-left transition flex flex-col justify-between ${
+                      (settings.speakerNameHandling || 'omit') === sp.id
+                        ? 'bg-indigo-500/15 border-indigo-500 text-indigo-200 font-bold shadow-sm'
+                        : 'bg-slate-900/90 border-slate-800 text-slate-300 hover:bg-slate-800/60'
+                    }`}
+                  >
+                    <div>
+                      <div className="flex items-center justify-between">
+                        <span className="text-xs font-bold">{sp.label}</span>
+                        {sp.badge && (
+                          <span className="text-[9px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded font-semibold">
+                            {sp.badge}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-[10px] text-slate-400 mt-1 leading-snug">{sp.desc}</p>
+                    </div>
+                    <div className="mt-2 text-[10px] text-indigo-300/80 bg-slate-950/80 px-2 py-1 rounded font-mono border border-slate-800">
+                      {sp.example}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 3. Proper Nouns / Character Names Mode (လူအမည် / နေရာအမည် မြန်မာလိုလား Eng လား) */}
+            <div className="bg-slate-950 p-4 rounded-xl border border-teal-500/30 space-y-2.5 shadow-sm">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-bold text-teal-300 flex items-center space-x-1.5">
+                  <Globe className="w-4 h-4 text-teal-400" />
+                  <span>လူအမည် / နေရာအမည်များ (Character & Place Names):</span>
+                </label>
+                <span className="text-[10px] text-slate-400">ဇာတ်ကောင်အမည်နှင့် မြို့/နေရာအမည်များ</span>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {[
+                  {
+                    id: 'myanmar_phonetic',
+                    label: 'မြန်မာအသံထွက်ဖြင့် ပြန်မည် (Myanmar Phonetics)',
+                    desc: 'နာမည်များကို သဘာဝကျသော မြန်မာအသံထွက်ဖြင့် ပြောင်းလဲရေးသားမည်',
+                    example: 'Harry Potter -> ဟယ်ရီပေါ်တာ၊ Tokyo -> တိုကျို',
+                  },
+                  {
+                    id: 'keep_english',
+                    label: 'အင်္ဂလိပ် မူရင်းအတိုင်း ထားမည် (Keep English Names)',
+                    desc: 'လူအမည်နှင့် နေရာအမည်များကို English စာလုံး မူရင်းအတိုင်း ဆက်ထားမည်',
+                    example: 'Harry Potter -> Harry Potter၊ Tokyo -> Tokyo',
+                  },
+                ].map((pn) => (
+                  <button
+                    key={pn.id}
+                    type="button"
+                    onClick={() =>
+                      onUpdateSettings({
+                        ...settings,
+                        properNounsMode: pn.id as ProperNounsMode,
+                      })
+                    }
+                    className={`p-3 rounded-xl border text-left transition flex flex-col justify-between ${
+                      (settings.properNounsMode || 'myanmar_phonetic') === pn.id
+                        ? 'bg-teal-500/15 border-teal-500 text-teal-200 font-bold shadow-sm'
+                        : 'bg-slate-900/90 border-slate-800 text-slate-300 hover:bg-slate-800/60'
+                    }`}
+                  >
+                    <div>
+                      <span className="text-xs font-bold block">{pn.label}</span>
+                      <p className="text-[10px] text-slate-400 mt-1 leading-snug">{pn.desc}</p>
+                    </div>
+                    <div className="mt-2 text-[10px] text-teal-300/80 bg-slate-950/80 px-2 py-1 rounded font-mono border border-slate-800">
+                      {pn.example}
+                    </div>
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            {/* 4. Genre / Style Selection */}
             <div className="space-y-2">
               <label className="text-xs font-bold text-slate-200 flex items-center space-x-1.5">
                 <Film className="w-4 h-4 text-emerald-400" />
@@ -299,7 +419,7 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
               </div>
             </div>
 
-            {/* 3. Tone & Speaker Options */}
+            {/* 5. Tone & Speaker Options */}
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
               <div>
                 <label className="text-[11px] font-semibold text-slate-300 block mb-1">
@@ -336,7 +456,7 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
               </div>
             </div>
 
-            {/* 4. Custom AI Prompt Instructions */}
+            {/* 6. Custom AI Prompt Instructions */}
             <div>
               <label className="text-xs font-bold text-slate-200 flex items-center space-x-1.5 mb-1.5">
                 <MessageSquare className="w-4 h-4 text-emerald-400" />

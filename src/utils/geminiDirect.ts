@@ -16,6 +16,9 @@ interface TranslationSettingsInput {
   style?: string;
   tone?: string;
   honorificLevel?: string;
+  honorificStyle?: string;
+  speakerNameHandling?: 'omit' | 'keep_english' | 'transliterate' | 'translate_context';
+  properNounsMode?: 'keep_english' | 'myanmar_phonetic';
 }
 
 /**
@@ -105,6 +108,20 @@ export async function translateDirectlyViaGemini(
   for (let i = 0; i < items.length; i += CHUNK_SIZE) {
     const chunk = items.slice(i, i + CHUNK_SIZE);
 
+    let speakerRule = '3. Keep speaker names in English or transliterate naturally.';
+    if (settings.speakerNameHandling === 'omit') {
+      speakerRule = '3. STRICTLY OMIT AND REMOVE all speaker names/labels/prefixes in parentheses or before colons (e.g. "[JOHN]: Hello" -> "မင်္ဂလာပါ", "ANNOUNCER: Welcome" -> "ကြိုဆိုပါတယ်", "(MARY) Good morning" -> "မင်္ဂလာနံနက်ခင်းပါ"). Output ONLY the spoken dialogue line without any character name.';
+    } else if (settings.speakerNameHandling === 'keep_english') {
+      speakerRule = '3. Keep speaker names and prefixes in original English letters (e.g. "JOHN: မင်္ဂလာပါ", "NARRATOR: ...").';
+    } else if (settings.speakerNameHandling === 'transliterate') {
+      speakerRule = '3. Transliterate speaker names to natural Myanmar phonetics (e.g. "JOHN: Hello" -> "ဂျွန်: မင်္ဂလာပါ").';
+    }
+
+    let properNounsRule = '4. Transliterate character names and place names into natural Myanmar phonetic script (e.g. John -> ဂျွန်, London -> လန်ဒန်).';
+    if (settings.properNounsMode === 'keep_english') {
+      properNounsRule = '4. Keep English character names and place names in original English alphabet (e.g. John -> John, Harry Potter -> Harry Potter).';
+    }
+
     let promptText = `You are a master film & video subtitle translator into natural spoken Myanmar (Burmese).
 Translate the following subtitle items into natural spoken Myanmar dialogue:
 ${JSON.stringify(chunk)}
@@ -112,8 +129,9 @@ ${JSON.stringify(chunk)}
 CRITICAL RULES:
 1. Translate into natural spoken Myanmar (မြန်မာစကားပြော) as used in movie subtitling. Avoid stiff written particles (သည်, ပါသည်).
 2. Omit panting/sighing sounds (e.g. "pant", "sigh", "ဟောဟဲ"). Output empty string "" if the line is purely noise.
-3. Keep speaker names in English or transliterate naturally.
-4. Return ONLY a valid JSON object with format: { "translations": [ { "id": 1, "translatedText": "..." } ] }`;
+${speakerRule}
+${properNounsRule}
+5. Return ONLY a valid JSON object with format: { "translations": [ { "id": 1, "translatedText": "..." } ] }`;
 
     if (settings.style) {
       promptText += `\nStyle Guideline: ${settings.style}`;

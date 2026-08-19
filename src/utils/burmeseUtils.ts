@@ -141,3 +141,23 @@ export function cleanSoundEffects(text: string): string {
 
   return cleaned;
 }
+
+/**
+ * Remove speaker name prefixes / labels at the start of subtitle text (e.g. "[JOHN]: Hello", "JOHN: Hello", "(MARY) Hi")
+ */
+export function stripSpeakerLabels(text: string): string {
+  if (!text) return '';
+  let cleaned = text.trim();
+
+  // 1. Remove bracketed / parenthesized speaker name at start of line: [JOHN]: or (JOHN) or [NARRATOR]
+  cleaned = cleaned.replace(/^[\(\[\{\（\【][^\)\}\]\）\】]+[\)\}\]\）\】]\s*[:：\-–]?\s*/g, '');
+
+  // 2. Remove speaker prefix followed by colon: JOHN: or Mary: or ANNOUNCER:
+  cleaned = cleaned.replace(/^[A-Za-z0-9\s_\-\.]{1,25}\s*[:：]\s*/g, '');
+
+  // 3. Remove Burmese name prefix followed by colon: ဂျွန်: or ဦးဘ:
+  cleaned = cleaned.replace(/^[\u1000-\u109F\s]{1,20}\s*[:：]\s*/g, '');
+
+  return cleaned.trim();
+}
+

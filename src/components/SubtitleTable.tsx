@@ -1,6 +1,6 @@
 import React, { useState, useMemo } from 'react';
 import { SubtitleItem } from '../types';
-import { BURMESE_PUNCTUATION_HELPERS, cleanSoundEffects } from '../utils/burmeseUtils';
+import { BURMESE_PUNCTUATION_HELPERS, cleanSoundEffects, stripSpeakerLabels } from '../utils/burmeseUtils';
 import {
   Search,
   Sparkles,
@@ -20,6 +20,7 @@ import {
   GitMerge,
   Key,
   ExternalLink,
+  UserX,
 } from 'lucide-react';
 
 interface SubtitleTableProps {
@@ -102,6 +103,33 @@ export const SubtitleTable: React.FC<SubtitleTableProps> = ({
         const cleanedTrans = cleanSoundEffects(item.translatedText);
         if (cleanedTrans !== item.translatedText) {
           updates.translatedText = cleanedTrans;
+          updated = true;
+        }
+      }
+
+      if (updated) {
+        onUpdateItem(item.id, updates);
+      }
+    });
+  };
+
+  const handleCleanSpeakerLabelsAll = () => {
+    items.forEach((item) => {
+      let updated = false;
+      const updates: Partial<SubtitleItem> = {};
+
+      if (item.translatedText) {
+        const cleanedTrans = stripSpeakerLabels(item.translatedText);
+        if (cleanedTrans !== item.translatedText) {
+          updates.translatedText = cleanedTrans;
+          updated = true;
+        }
+      }
+
+      if (item.originalText) {
+        const cleanedOrig = stripSpeakerLabels(item.originalText);
+        if (cleanedOrig !== item.originalText) {
+          updates.originalText = cleanedOrig;
           updated = true;
         }
       }
@@ -196,6 +224,15 @@ export const SubtitleTable: React.FC<SubtitleTableProps> = ({
           >
             <Replace className="w-3.5 h-3.5 text-emerald-400" />
             <span>ရှာပြီး အစားထိုးမည်</span>
+          </button>
+
+          <button
+            onClick={handleCleanSpeakerLabelsAll}
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs rounded-xl border border-slate-700 transition"
+            title="စာကြောင်းရှေ့တွင် ကပ်ပါနေသော ပြောသူအမည်များကို ဖျက်ထုတ်ရန် (ဥပမာ [JOHN]: သို့မဟုတ် JOHN:)"
+          >
+            <UserX className="w-3.5 h-3.5 text-indigo-400" />
+            <span>ပြောသူအမည် ဖျက်မည်</span>
           </button>
 
           <button

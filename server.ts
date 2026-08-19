@@ -265,15 +265,38 @@ app.post('/api/verify-gemini-key', async (req, res) => {
     }
 
     const ai = new GoogleGenAI({ apiKey: keyToTest.trim() });
-    const response = await ai.models.generateContent({
-      model: 'gemini-2.0-flash',
-      contents: 'Reply with: OK',
-    });
+    const testModels = [
+      'gemini-2.5-flash',
+      'gemini-3.7-flash',
+      'gemini-3.6-flash',
+      'gemini-flash-latest',
+      'gemini-3.1-flash-lite',
+    ];
 
-    if (response.text) {
-      return res.json({ valid: true, message: 'Gemini API Key မှန်ကန်စွာ အလုပ်လုပ်ပါသည် (gemini-2.0-flash)' });
+    let verifiedModel = '';
+    let lastErr: any = null;
+
+    for (const testModel of testModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model: testModel,
+          contents: 'Reply with: OK',
+        });
+
+        if (response.text) {
+          verifiedModel = testModel;
+          break;
+        }
+      } catch (err: any) {
+        lastErr = err;
+      }
     }
-    return res.status(400).json({ valid: false, error: 'API မှ တုံ့ပြန်မှု မရရှိပါ' });
+
+    if (verifiedModel) {
+      return res.json({ valid: true, message: `Gemini API Key မှန်ကန်စွာ ချိတ်ဆက်ပြီးပါပြီ (${verifiedModel})` });
+    }
+
+    throw lastErr || new Error('API မှ တုံ့ပြန်မှု မရရှိပါ');
   } catch (err: any) {
     console.error('Error verifying Gemini API key:', err);
     let errMsg = err.message || 'API Key စစ်ဆေး၍ မရပါ';
@@ -417,10 +440,11 @@ ${JSON.stringify(items.map((i: any) => ({ id: i.id, text: i.text })))}`;
 
     // Supported model fallback order for Free and Paid Gemini keys
     const modelsToTry = [
-      'gemini-2.0-flash',
-      'gemini-1.5-flash',
-      'gemini-2.0-flash-lite',
-      'gemini-1.5-pro',
+      'gemini-2.5-flash',
+      'gemini-3.7-flash',
+      'gemini-3.6-flash',
+      'gemini-flash-latest',
+      'gemini-3.1-flash-lite',
     ];
 
     let pass = 0;

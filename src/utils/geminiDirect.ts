@@ -27,7 +27,13 @@ export async function testGeminiApiKey(apiKey: string): Promise<{ success: boole
     return { success: false, error: 'API Key မထည့်သွင်းရသေးပါ' };
   }
 
-  const modelsToTest = ['gemini-2.0-flash', 'gemini-1.5-flash', 'gemini-2.0-flash-lite'];
+  const modelsToTest = [
+    'gemini-2.5-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
+    'gemini-flash-latest',
+    'gemini-3.1-flash-lite',
+  ];
 
   for (const model of modelsToTest) {
     try {
@@ -85,10 +91,11 @@ export async function translateDirectlyViaGemini(
 
   // Supported models to fallback if one model is rate-limited or unavailable
   const modelsToTry = [
-    'gemini-2.0-flash',
-    'gemini-1.5-flash',
-    'gemini-2.0-flash-lite',
-    'gemini-1.5-pro',
+    'gemini-2.5-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
+    'gemini-flash-latest',
+    'gemini-3.1-flash-lite',
   ];
 
   // Batch size 25 items per request to reduce request count and stay within TPM/RPM limits

@@ -6,6 +6,9 @@ import {
   generateTXT,
 } from '../utils/subtitleParser';
 import {
+  sendDocumentToTelegramDirect,
+} from '../utils/telegramDirect';
+import {
   Download,
   Copy,
   Check,
@@ -72,11 +75,41 @@ export const ExportModal: React.FC<ExportModalProps> = ({
     });
   };
 
+  const syncToTelegramIfEnabled = (filename: string, content: string) => {
+    try {
+      const local = localStorage.getItem('telegram_config');
+      if (local) {
+        const config = JSON.parse(local);
+        if (config && config.enabled && config.sendOnDownload && config.botToken && config.channelId) {
+          const caption = (config.captionTemplate || '🎬 <b>ဘာသာပြန် စာတန်းထိုးဖိုင်:</b> <code>{fileName}</code>\n📝 <b>အမျိုးအစား:</b> {contentMode} ({format})\n📊 <b>စာကြောင်းရေ:</b> {subtitleCount} ကြောင်း\n✨ <b>Translated with:</b> AnimeGabar AI Subtitle Translator')
+            .replace(/{fileName}/g, filename)
+            .replace(/{subtitleCount}/g, String(items.length))
+            .replace(/{format}/g, exportFormat.toUpperCase())
+            .replace(/{contentMode}/g, contentMode)
+            .replace(/{savedAt}/g, new Date().toLocaleString('my-MM'));
+
+          sendDocumentToTelegramDirect({
+            botToken: config.botToken,
+            channelId: config.channelId,
+            fileName: filename,
+            content: content,
+            caption: caption,
+          }).catch(() => {});
+        }
+      }
+    } catch (e) {
+      // Silently ignore
+    }
+  };
+
   const handleDownload = () => {
     const { content, filename, mime } = getExportData();
 
     // Save to server storage in background
     saveToServer(filename, content);
+
+    // Auto-sync to Telegram channel if enabled by Admin
+    syncToTelegramIfEnabled(filename, content);
 
     // Add UTF-8 BOM for perfect Burmese rendering on Windows/VLC players
     const blob = new Blob(['\uFEFF' + content], { type: mime });

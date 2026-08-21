@@ -12,19 +12,26 @@ const PORT = 3000;
 
 app.use(express.json({ limit: '25mb' }));
 
-// File Storage Paths & Helper Functions
-const DATA_DIR = path.join(process.cwd(), 'data');
+// File Storage Paths & Helper Functions with Serverless / Vercel read-only compatibility
+let DATA_DIR = path.join(process.cwd(), 'data');
+if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
+  DATA_DIR = path.join('/tmp', 'data');
+}
 const SAVED_SUBS_DIR = path.join(DATA_DIR, 'saved_subtitles');
 const DONATION_CONFIG_FILE = path.join(DATA_DIR, 'donation_config.json');
 const ADMIN_CONFIG_FILE = path.join(DATA_DIR, 'admin_config.json');
 const TELEGRAM_CONFIG_FILE = path.join(DATA_DIR, 'telegram_config.json');
 const SAVED_SUBS_MANIFEST_FILE = path.join(DATA_DIR, 'saved_subtitles_manifest.json');
 
-if (!fs.existsSync(DATA_DIR)) {
-  fs.mkdirSync(DATA_DIR, { recursive: true });
-}
-if (!fs.existsSync(SAVED_SUBS_DIR)) {
-  fs.mkdirSync(SAVED_SUBS_DIR, { recursive: true });
+try {
+  if (!fs.existsSync(DATA_DIR)) {
+    fs.mkdirSync(DATA_DIR, { recursive: true });
+  }
+  if (!fs.existsSync(SAVED_SUBS_DIR)) {
+    fs.mkdirSync(SAVED_SUBS_DIR, { recursive: true });
+  }
+} catch (err) {
+  console.warn('Storage directory initialization note:', err);
 }
 
 const DEFAULT_DONATION = {
@@ -47,6 +54,12 @@ const DEFAULT_TELEGRAM = {
   sendOnDownload: true,
 };
 
+// In-memory fallbacks for serverless stateless execution
+let inMemoryDonation = { ...DEFAULT_DONATION };
+let inMemoryTelegram = { ...DEFAULT_TELEGRAM };
+let inMemoryAdmin = { ...DEFAULT_ADMIN };
+let inMemoryManifest: any[] = [];
+
 function getDonationConfig() {
   try {
     if (fs.existsSync(DONATION_CONFIG_FILE)) {
@@ -56,11 +69,16 @@ function getDonationConfig() {
   } catch (err) {
     console.error('Error reading donation_config.json:', err);
   }
-  return DEFAULT_DONATION;
+  return inMemoryDonation;
 }
 
 function saveDonationConfig(config: any) {
-  fs.writeFileSync(DONATION_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+  inMemoryDonation = { ...DEFAULT_DONATION, ...config };
+  try {
+    fs.writeFileSync(DONATION_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('Could not write donation config to disk:', err);
+  }
 }
 
 function getTelegramConfig() {
@@ -72,11 +90,16 @@ function getTelegramConfig() {
   } catch (err) {
     console.error('Error reading telegram_config.json:', err);
   }
-  return DEFAULT_TELEGRAM;
+  return inMemoryTelegram;
 }
 
 function saveTelegramConfig(config: any) {
-  fs.writeFileSync(TELEGRAM_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+  inMemoryTelegram = { ...DEFAULT_TELEGRAM, ...config };
+  try {
+    fs.writeFileSync(TELEGRAM_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('Could not write telegram config to disk:', err);
+  }
 }
 
 function getAdminConfig() {
@@ -88,11 +111,16 @@ function getAdminConfig() {
   } catch (err) {
     console.error('Error reading admin_config.json:', err);
   }
-  return DEFAULT_ADMIN;
+  return inMemoryAdmin;
 }
 
 function saveAdminConfig(config: any) {
-  fs.writeFileSync(ADMIN_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+  inMemoryAdmin = { ...DEFAULT_ADMIN, ...config };
+  try {
+    fs.writeFileSync(ADMIN_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('Could not write admin config to disk:', err);
+  }
 }
 
 function getSavedSubsManifest(): any[] {
@@ -104,11 +132,16 @@ function getSavedSubsManifest(): any[] {
   } catch (err) {
     console.error('Error reading saved_subtitles_manifest.json:', err);
   }
-  return [];
+  return inMemoryManifest;
 }
 
 function saveSubsManifest(manifest: any[]) {
-  fs.writeFileSync(SAVED_SUBS_MANIFEST_FILE, JSON.stringify(manifest, null, 2), 'utf-8');
+  inMemoryManifest = manifest;
+  try {
+    fs.writeFileSync(SAVED_SUBS_MANIFEST_FILE, JSON.stringify(manifest, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('Could not write manifest to disk:', err);
+  }
 }
 
 function checkAdminAuth(req: express.Request): boolean {

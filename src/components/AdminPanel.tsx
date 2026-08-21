@@ -1,6 +1,10 @@
 import React, { useState, useEffect } from 'react';
 import { DonationConfig, TelegramConfig } from '../types';
 import {
+  testTelegramConnection,
+  sendDocumentToTelegramDirect,
+} from '../utils/telegramDirect';
+import {
   ShieldAlert,
   Lock,
   KeyRound,
@@ -72,12 +76,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [donationSaveSuccess, setDonationSaveSuccess] = useState(false);
 
   // Telegram Config State
-  const [telegramForm, setTelegramForm] = useState<TelegramConfig>({
-    botToken: '',
-    channelId: '',
-    enabled: true,
-    captionTemplate: '🎬 <b>ဘာသာပြန် စာတန်းထိုးဖိုင်:</b> <code>{fileName}</code>\n📝 <b>အမျိုးအစား:</b> {contentMode} ({format})\n📊 <b>စာကြောင်းရေ:</b> {subtitleCount} ကြောင်း\n⏱ <b>သိမ်းဆည်းချိန်:</b> {savedAt}\n✨ <b>Translated with:</b> AnimeGabar AI Subtitle Translator',
-    sendOnDownload: true,
+  const [telegramForm, setTelegramForm] = useState<TelegramConfig>(() => {
+    try {
+      const local = typeof window !== 'undefined' ? localStorage.getItem('telegram_config') : null;
+      if (local) {
+        const parsed = JSON.parse(local);
+        if (parsed && typeof parsed === 'object') {
+          return {
+            botToken: parsed.botToken || '',
+            channelId: parsed.channelId || '',
+            enabled: parsed.enabled ?? true,
+            captionTemplate: parsed.captionTemplate || '🎬 <b>ဘာသာပြန် စာတန်းထိုးဖိုင်:</b> <code>{fileName}</code>\n📝 <b>အမျိုးအစား:</b> {contentMode} ({format})\n📊 <b>စာကြောင်းရေ:</b> {subtitleCount} ကြောင်း\n⏱ <b>သိမ်းဆည်းချိန်:</b> {savedAt}\n✨ <b>Translated with:</b> AnimeGabar AI Subtitle Translator',
+            sendOnDownload: parsed.sendOnDownload ?? true,
+          };
+        }
+      }
+    } catch (e) {
+      // Ignore
+    }
+    return {
+      botToken: '',
+      channelId: '',
+      enabled: true,
+      captionTemplate: '🎬 <b>ဘာသာပြန် စာတန်းထိုးဖိုင်:</b> <code>{fileName}</code>\n📝 <b>အမျိုးအစား:</b> {contentMode} ({format})\n📊 <b>စာကြောင်းရေ:</b> {subtitleCount} ကြောင်း\n⏱ <b>သိမ်းဆည်းချိန်:</b> {savedAt}\n✨ <b>Translated with:</b> AnimeGabar AI Subtitle Translator',
+      sendOnDownload: true,
+    };
   });
   const [isSavingTelegram, setIsSavingTelegram] = useState(false);
   const [telegramSaveSuccess, setTelegramSaveSuccess] = useState(false);
@@ -307,37 +330,54 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const handleTestTelegram = async () => {
-    if (!adminPassword) return;
-    if (!telegramForm.botToken || !telegramForm.channelId) {
+    if (!telegramForm.botToken?.trim() || !telegramForm.channelId?.trim()) {
       alert('Telegram Bot Token နှင့် Channel ID ထည့်သွင်းပေးပါ');
       return;
     }
     setIsTestingTelegram(true);
     setTelegramTestResult(null);
+
     try {
-      const res = await fetch('/api/admin/test-telegram', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-admin-password': adminPassword,
-        },
-        body: JSON.stringify({
-          botToken: telegramForm.botToken,
-          channelId: telegramForm.channelId,
-        }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
-        setTelegramTestResult({
-          success: true,
-          message: `${data.message} (${data.chatTitle || telegramForm.channelId})`,
+      // 1. Try server API endpoint first if running in full Node server environment
+      let testedOnServer = false;
+      try {
+        const res = await fetch('/api/admin/test-telegram', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'x-admin-password': adminPassword,
+          },
+          body: JSON.stringify({
+            botToken: telegramForm.botToken,
+            channelId: telegramForm.channelId,
+          }),
         });
-      } else {
-        setTelegramTestResult({
-          success: false,
-          message: data.error || 'Telegram ချိတ်ဆက်မှု မအောင်မြင်ပါ',
-        });
+
+        const contentType = res.headers.get('content-type');
+        if (res.ok && contentType && contentType.includes('application/json')) {
+          const data = await res.json();
+          testedOnServer = true;
+          if (data.success) {
+            setTelegramTestResult({
+              success: true,
+              message: `${data.message} (${data.chatTitle || telegramForm.channelId})`,
+            });
+            return;
+          } else {
+            setTelegramTestResult({
+              success: false,
+              message: data.error || 'Telegram ချိတ်ဆက်မှု မအောင်မြင်ပါ',
+            });
+            return;
+          }
+        }
+      } catch (serverErr) {
+        // Fallback to direct client API
       }
+
+      // 2. Direct browser test (Works seamlessly on Vercel, Hostinger, GitHub Pages)
+      const directResult = await testTelegramConnection(telegramForm.botToken, telegramForm.channelId);
+      setTelegramTestResult(directResult);
     } catch (err: any) {
       setTelegramTestResult({
         success: false,

@@ -41,6 +41,14 @@ export interface DonationConfig {
   note: string;
 }
 
+export interface TelegramConfig {
+  botToken: string;
+  channelId: string;
+  enabled: boolean;
+  captionTemplate?: string;
+  sendOnDownload: boolean;
+}
+
 export interface TranslationSettings {
   style: TranslationStyle;
   tone: ToneStyle;
@@ -56,6 +64,7 @@ export interface TranslationSettings {
   customPromptNote: string;
   customApiKey?: string;
   donationConfig?: DonationConfig;
+  telegramConfig?: TelegramConfig;
 }
 
 export interface SubtitleFileMeta {

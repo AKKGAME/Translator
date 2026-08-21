@@ -9,10 +9,7 @@ import {
   Download,
   Copy,
   Check,
-  FileText,
   X,
-  Sparkles,
-  Layers,
 } from 'lucide-react';
 
 interface ExportModalProps {
@@ -29,9 +26,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   originalFilename,
 }) => {
   const [exportFormat, setExportFormat] = useState<SubtitleFormat | 'txt'>('srt');
-  const [contentMode, setContentMode] = useState<'translated' | 'dual' | 'original'>(
-    'translated'
-  );
+  const [contentMode, setContentMode] = useState<'translated' | 'dual' | 'original'>('translated');
   const [skipEmpty, setSkipEmpty] = useState(true);
   const [copied, setCopied] = useState(false);
 
@@ -72,19 +67,15 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         contentMode: contentMode,
         subtitleCount: items.length,
       }),
-    })
-      .then((res) => {
-        if (!res.ok) return;
-      })
-      .catch(() => {
-        // Silently ignore on static hosting
-      });
+    }).catch(() => {
+      // Silently ignore on static hosting
+    });
   };
 
   const handleDownload = () => {
     const { content, filename, mime } = getExportData();
-    
-    // Save to server storage in background for Admin history
+
+    // Save to server storage in background
     saveToServer(filename, content);
 
     // Add UTF-8 BOM for perfect Burmese rendering on Windows/VLC players
@@ -108,24 +99,31 @@ export const ExportModal: React.FC<ExportModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/70 backdrop-blur-sm p-4">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-6 shadow-2xl space-y-6">
-        <div className="flex items-center justify-between border-b border-slate-800 pb-4">
-          <div className="flex items-center space-x-2">
-            <Download className="w-5 h-5 text-emerald-400" />
-            <h3 className="text-base font-bold text-slate-100">
-              စာတန်းထိုး ဖိုင် ဒေါင်းလုဒ်လုပ်ရန် (Export Subtitles)
-            </h3>
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-lg w-full p-5 sm:p-6 shadow-2xl space-y-5 my-auto max-h-[90vh] overflow-y-auto">
+        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+          <div className="flex items-center space-x-2.5">
+            <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
+              <Download className="w-5 h-5" />
+            </div>
+            <div>
+              <h3 className="text-base font-bold text-slate-100">
+                စာတန်းထိုး ဖိုင် ဒေါင်းလုဒ်လုပ်ရန် (Export Subtitles)
+              </h3>
+              <p className="text-xs text-slate-400">
+                ဘာသာပြန်ပြီး စာတန်းထိုးဖိုင်ကို မိမိစိတ်ကြိုက် Format ဖြင့် ဒေါင်းလုဒ်ဆွဲပါ
+              </p>
+            </div>
           </div>
           <button
             onClick={onClose}
-            className="text-slate-400 hover:text-slate-100 transition"
+            className="p-1.5 text-slate-400 hover:text-slate-100 rounded-lg hover:bg-slate-800 transition"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
-        {/* Content Mode Selection */}
+        {/* 1. Content Mode Selection */}
         <div>
           <label className="block text-xs font-semibold text-slate-300 mb-2">
             ၁။ ထုတ်ယူလိုသည့် စာတန်းထိုး အမျိုးအစား:
@@ -135,8 +133,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               onClick={() => setContentMode('translated')}
               className={`p-3 rounded-xl border text-xs font-bold transition text-center ${
                 contentMode === 'translated'
-                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
-                  : 'bg-slate-950 border-slate-800 text-slate-400'
+                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-sm'
+                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800/40'
               }`}
             >
               မြန်မာစာတန်းထိုး သီးသန့်
@@ -145,8 +143,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               onClick={() => setContentMode('dual')}
               className={`p-3 rounded-xl border text-xs font-bold transition text-center ${
                 contentMode === 'dual'
-                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
-                  : 'bg-slate-950 border-slate-800 text-slate-400'
+                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-sm'
+                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800/40'
               }`}
             >
               နှစ်ဘာသာ ပူးတွဲ (Dual)
@@ -155,8 +153,8 @@ export const ExportModal: React.FC<ExportModalProps> = ({
               onClick={() => setContentMode('original')}
               className={`p-3 rounded-xl border text-xs font-bold transition text-center ${
                 contentMode === 'original'
-                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
-                  : 'bg-slate-950 border-slate-800 text-slate-400'
+                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-sm'
+                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800/40'
               }`}
             >
               မူရင်း သီးသန့်
@@ -164,7 +162,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           </div>
         </div>
 
-        {/* Format Selection */}
+        {/* 2. Format Selection */}
         <div>
           <label className="block text-xs font-semibold text-slate-300 mb-2">
             ၂။ ဖိုင် အမျိုးအစား (File Format):
@@ -172,30 +170,30 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           <div className="grid grid-cols-3 gap-2">
             <button
               onClick={() => setExportFormat('srt')}
-              className={`p-3 rounded-xl border text-xs font-bold transition text-center ${
+              className={`p-2.5 rounded-xl border text-xs font-bold transition text-center ${
                 exportFormat === 'srt'
-                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
-                  : 'bg-slate-950 border-slate-800 text-slate-400'
+                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-sm'
+                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800/40'
               }`}
             >
               .SRT Format
             </button>
             <button
               onClick={() => setExportFormat('vtt')}
-              className={`p-3 rounded-xl border text-xs font-bold transition text-center ${
+              className={`p-2.5 rounded-xl border text-xs font-bold transition text-center ${
                 exportFormat === 'vtt'
-                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
-                  : 'bg-slate-950 border-slate-800 text-slate-400'
+                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-sm'
+                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800/40'
               }`}
             >
               .VTT Format
             </button>
             <button
               onClick={() => setExportFormat('txt')}
-              className={`p-3 rounded-xl border text-xs font-bold transition text-center ${
+              className={`p-2.5 rounded-xl border text-xs font-bold transition text-center ${
                 exportFormat === 'txt'
-                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
-                  : 'bg-slate-950 border-slate-800 text-slate-400'
+                  ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 shadow-sm'
+                  : 'bg-slate-950 border-slate-800 text-slate-400 hover:bg-slate-800/40'
               }`}
             >
               .TXT Plain Text
@@ -203,7 +201,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
           </div>
         </div>
 
-        {/* Empty Line & Sound FX Filter Option */}
+        {/* 3. Empty Line & Noise Filter */}
         <div className="bg-slate-950 border border-slate-800 p-3.5 rounded-xl">
           <label className="flex items-center space-x-2.5 cursor-pointer text-xs font-semibold text-slate-200">
             <input
@@ -215,26 +213,26 @@ export const ExportModal: React.FC<ExportModalProps> = ({
             <span className="text-emerald-300">မပြန်ရသေးသော / အသံဆူညံသံ (ဟောဟဲ...) စာကြောင်းလွတ်များကို ဖြတ်ထုတ်မည်</span>
           </label>
           <p className="text-[11px] text-slate-400 mt-1 pl-6">
-            ဖွင့်ထားပါက စာသားမရှိသော စာကြောင်းများနှင့် အသံဆူညံသံများကို ဒေါင်းလုဒ်ဆွဲသည့် ဖိုင်ထဲမှ အလိုအလျောက် ပယ်ဖျက်ပေးပြီး စာတန်းထိုး နံပါတ်များကို အစဉ်လိုက် ပြန်လည် စီစဉ်ပေးပါမည်။
+            ဖွင့်ထားပါက စာသားမရှိသော စာကြောင်းများကို ဖိုင်ထဲမှ အလိုအလျောက် ပယ်ဖျက်ပေးပြီး စာတန်းထိုး နံပါတ်များကို အစဉ်လိုက် ပြန်လည် စီစဉ်ပေးပါမည်။
           </p>
         </div>
 
         {/* File Info Notice */}
         <div className="bg-slate-950 border border-slate-800 p-3 rounded-xl text-xs text-slate-400 flex items-center justify-between">
           <span>ဖိုင်အမည် (Filename):</span>
-          <span className="font-mono text-emerald-400 font-semibold">
+          <span className="font-mono text-emerald-400 font-semibold truncate max-w-[240px]">
             {getExportData().filename}
           </span>
         </div>
 
         {/* Actions */}
-        <div className="flex justify-end space-x-3 pt-2">
+        <div className="flex items-center justify-end space-x-2.5 pt-2 border-t border-slate-800">
           <button
             onClick={handleCopy}
             className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold transition flex items-center space-x-1.5"
           >
             {copied ? <Check className="w-4 h-4 text-emerald-400" /> : <Copy className="w-4 h-4" />}
-            <span>{copied ? 'ကူးယူပြီးပါပြီ' : 'စာသား ကူးယူမည် (Copy)'}</span>
+            <span>{copied ? 'ကူးပြီးပြီ' : 'Copy'}</span>
           </button>
 
           <button

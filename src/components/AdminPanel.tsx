@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { DonationConfig } from '../types';
+import { DonationConfig, TelegramConfig } from '../types';
 import {
   ShieldAlert,
   Lock,
@@ -19,6 +19,12 @@ import {
   X,
   Copy,
   Check,
+  Send,
+  Sliders,
+  ExternalLink,
+  HelpCircle,
+  ArrowLeft,
+  Home,
 } from 'lucide-react';
 
 interface SavedFileMeta {
@@ -35,11 +41,13 @@ interface SavedFileMeta {
 interface AdminPanelProps {
   onUpdateDonationConfig: (config: DonationConfig) => void;
   currentDonationConfig?: DonationConfig;
+  onBackToUserPanel?: () => void;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   onUpdateDonationConfig,
   currentDonationConfig,
+  onBackToUserPanel,
 }) => {
   const [adminPassword, setAdminPassword] = useState<string>(() => {
     return sessionStorage.getItem('admin_pass') || '';
@@ -50,7 +58,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Active Admin Sub-tab
-  const [activeTab, setActiveTab] = useState<'donation' | 'files' | 'password'>('donation');
+  const [activeTab, setActiveTab] = useState<'donation' | 'telegram' | 'files' | 'password'>('donation');
 
   // Donation State
   const [donationForm, setDonationForm] = useState<DonationConfig>({
@@ -62,6 +70,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   });
   const [isSavingDonation, setIsSavingDonation] = useState(false);
   const [donationSaveSuccess, setDonationSaveSuccess] = useState(false);
+
+  // Telegram Config State
+  const [telegramForm, setTelegramForm] = useState<TelegramConfig>({
+    botToken: '',
+    channelId: '',
+    enabled: true,
+    captionTemplate: '🎬 <b>ဘာသာပြန် စာတန်းထိုးဖိုင်:</b> <code>{fileName}</code>\n📝 <b>အမျိုးအစား:</b> {contentMode} ({format})\n📊 <b>စာကြောင်းရေ:</b> {subtitleCount} ကြောင်း\n⏱ <b>သိမ်းဆည်းချိန်:</b> {savedAt}\n✨ <b>Translated with:</b> AnimeGabar AI Subtitle Translator',
+    sendOnDownload: true,
+  });
+  const [isSavingTelegram, setIsSavingTelegram] = useState(false);
+  const [telegramSaveSuccess, setTelegramSaveSuccess] = useState(false);
+  const [showBotToken, setShowBotToken] = useState(false);
+  const [isTestingTelegram, setIsTestingTelegram] = useState(false);
+  const [telegramTestResult, setTelegramTestResult] = useState<{
+    success: boolean;
+    message: string;
+  } | null>(null);
 
   // Saved Files State
   const [savedFiles, setSavedFiles] = useState<SavedFileMeta[]>([]);
@@ -88,6 +113,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       verifyPassword(adminPassword, true);
     }
   }, []);
+
+  const fetchTelegramConfig = async (passToUse?: string) => {
+    const pass = passToUse || adminPassword;
+    if (!pass) return;
+    try {
+      const res = await fetch('/api/admin/telegram-config', {
+        headers: { 'x-admin-password': pass },
+      });
+      const contentType = res.headers.get('content-type');
+      if (res.ok && contentType && contentType.includes('application/json')) {
+        const data = await res.json();
+        setTelegramForm((prev) => ({ ...prev, ...data }));
+      }
+    } catch (err) {
+      console.error('Failed to load telegram config:', err);
+    }
+  };
 
   const verifyPassword = async (pass: string, isAutoCheck = false) => {
     if (!pass) return;
@@ -123,8 +165,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         setIsLoggedIn(true);
         setAdminPassword(pass);
         sessionStorage.setItem('admin_pass', pass);
-        // Load files
+        // Load files & telegram config
         fetchSavedFiles(pass);
+        fetchTelegramConfig(pass);
       } else {
         if (!isAutoCheck) {
           setLoginError(data.error || 'စကားဝှက် မှားယွင်းနေပါသည်။');
@@ -223,6 +266,85 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setTimeout(() => setDonationSaveSuccess(false), 3000);
     } finally {
       setIsSavingDonation(false);
+    }
+  };
+
+  const handleSaveTelegramConfig = async () => {
+    if (!adminPassword) return;
+    setIsSavingTelegram(true);
+    setTelegramSaveSuccess(false);
+    try {
+      const res = await fetch('/api/admin/update-telegram-config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-password': adminPassword,
+        },
+        body: JSON.stringify({ telegramConfig: telegramForm }),
+      });
+      const contentType = res.headers.get('content-type');
+      if (!contentType || !contentType.includes('application/json')) {
+        localStorage.setItem('telegram_config', JSON.stringify(telegramForm));
+        setTelegramSaveSuccess(true);
+        setTimeout(() => setTelegramSaveSuccess(false), 3000);
+        return;
+      }
+      const data = await res.json();
+      if (res.ok && data.success) {
+        localStorage.setItem('telegram_config', JSON.stringify(telegramForm));
+        setTelegramSaveSuccess(true);
+        setTimeout(() => setTelegramSaveSuccess(false), 3000);
+      } else {
+        alert(data.error || 'Telegram ဆက်တင် သိမ်းဆည်းရန် အဆင်မပြေပါ');
+      }
+    } catch (err) {
+      localStorage.setItem('telegram_config', JSON.stringify(telegramForm));
+      setTelegramSaveSuccess(true);
+      setTimeout(() => setTelegramSaveSuccess(false), 3000);
+    } finally {
+      setIsSavingTelegram(false);
+    }
+  };
+
+  const handleTestTelegram = async () => {
+    if (!adminPassword) return;
+    if (!telegramForm.botToken || !telegramForm.channelId) {
+      alert('Telegram Bot Token နှင့် Channel ID ထည့်သွင်းပေးပါ');
+      return;
+    }
+    setIsTestingTelegram(true);
+    setTelegramTestResult(null);
+    try {
+      const res = await fetch('/api/admin/test-telegram', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-password': adminPassword,
+        },
+        body: JSON.stringify({
+          botToken: telegramForm.botToken,
+          channelId: telegramForm.channelId,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setTelegramTestResult({
+          success: true,
+          message: `${data.message} (${data.chatTitle || telegramForm.channelId})`,
+        });
+      } else {
+        setTelegramTestResult({
+          success: false,
+          message: data.error || 'Telegram ချိတ်ဆက်မှု မအောင်မြင်ပါ',
+        });
+      }
+    } catch (err: any) {
+      setTelegramTestResult({
+        success: false,
+        message: err.message || 'စမ်းသပ်၍ မရပါ',
+      });
+    } finally {
+      setIsTestingTelegram(false);
     }
   };
 
@@ -376,6 +498,19 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               )}
             </button>
           </form>
+
+          {onBackToUserPanel && (
+            <div className="mt-4 pt-4 border-t border-slate-800">
+              <button
+                type="button"
+                onClick={onBackToUserPanel}
+                className="w-full py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl border border-slate-700 transition flex items-center justify-center space-x-2"
+              >
+                <ArrowLeft className="w-4 h-4" />
+                <span>မူလ အသုံးပြုသူ စာမျက်နှာသို့ ပြန်သွားမည် (Back to User Panel)</span>
+              </button>
+            </div>
+          )}
         </div>
       </div>
     );
@@ -399,18 +534,31 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </span>
             </div>
             <p className="text-xs text-slate-400">
-              အလှူငွေ အကောင့်များ ပြင်ဆင်ခြင်းနှင့် Server ပေါ်မှ စာတန်းထိုး ဖိုင်များကို စီမံခန့်ခွဲခြင်း
+              အလှူငွေ အကောင့်များ၊ Telegram Channel ချိတ်ဆက်မှုနှင့် စာတန်းထိုး ဖိုင်များကို စီမံခန့်ခွဲခြင်း
             </p>
           </div>
         </div>
 
-        <button
-          onClick={handleLogout}
-          className="flex items-center justify-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-rose-500/20 hover:text-rose-300 text-slate-300 text-xs font-semibold border border-slate-700 transition self-start sm:self-auto"
-        >
-          <LogOut className="w-4 h-4" />
-          <span>Admin မှ ထွက်မည်</span>
-        </button>
+        <div className="flex items-center space-x-2 self-start sm:self-auto">
+          {onBackToUserPanel && (
+            <button
+              onClick={onBackToUserPanel}
+              className="flex items-center justify-center space-x-1.5 px-3.5 py-2 rounded-xl bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 text-xs font-bold transition shadow-sm"
+              title="User Panel သို့ ပြန်သွားမည်"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>User Panel သို့ ပြန်သွားမည်</span>
+            </button>
+          )}
+
+          <button
+            onClick={handleLogout}
+            className="flex items-center justify-center space-x-1.5 px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-rose-500/20 hover:text-rose-300 text-slate-300 text-xs font-semibold border border-slate-700 transition"
+          >
+            <LogOut className="w-4 h-4" />
+            <span>Admin မှ ထွက်မည်</span>
+          </button>
+        </div>
       </div>
 
       {/* Sub-tab Navigation */}
@@ -425,6 +573,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         >
           <Heart className="w-4 h-4 fill-current text-rose-400" />
           <span>အလှူငွေ အကောင့်များ စီမံရန်</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('telegram');
+            fetchTelegramConfig();
+          }}
+          className={`flex items-center space-x-2 px-4 py-3 border-b-2 text-xs font-bold transition whitespace-nowrap ${
+            activeTab === 'telegram'
+              ? 'border-sky-500 text-sky-400 bg-sky-500/5'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Send className="w-4 h-4 text-sky-400" />
+          <span>Telegram Channel ချိတ်ဆက်မှု</span>
         </button>
 
         <button
@@ -583,7 +746,197 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
       )}
 
-      {/* Tab 2: Saved Files Manager */}
+      {/* Tab 2: Telegram Channel Integration Settings */}
+      {activeTab === 'telegram' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 shadow-sm">
+          <div className="flex items-center justify-between border-b border-slate-800 pb-4">
+            <div>
+              <h2 className="text-sm font-bold text-slate-100 flex items-center space-x-2">
+                <Send className="w-4 h-4 text-sky-400" />
+                <span>Telegram Bot & Channel စာတန်းထိုးဖိုင် အလိုအလျောက် ပို့ရန် ဆက်တင်</span>
+              </h2>
+              <p className="text-xs text-slate-400 mt-1">
+                အသုံးပြုသူများ ဘာသာပြန်ပြီး စာတန်းထိုးဖိုင်ကို ဒေါင်းလုဒ်ဆွဲသည့် အချိန်တွင် မိမိ၏ Telegram Channel / Group သို့ Bot ဖြင့် အလိုအလျောက် ပို့ပေးပါမည်
+              </p>
+            </div>
+            {telegramSaveSuccess && (
+              <span className="flex items-center space-x-1 px-3 py-1 bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 rounded-full text-xs font-semibold animate-fadeIn">
+                <CheckCircle2 className="w-4 h-4" />
+                <span>သိမ်းဆည်းပြီးပါပြီ</span>
+              </span>
+            )}
+          </div>
+
+          {/* Quick Guide Card */}
+          <div className="bg-sky-950/30 border border-sky-500/20 rounded-2xl p-4 text-xs text-slate-300 space-y-2.5">
+            <h4 className="font-bold text-sky-300 flex items-center space-x-1.5">
+              <HelpCircle className="w-4 h-4 text-sky-400" />
+              <span>Telegram Bot နှင့် Channel ချိတ်ဆက်နည်း လမ်းညွှန်:</span>
+            </h4>
+            <ol className="list-decimal list-inside space-y-1 text-[11px] text-slate-300 leading-relaxed pl-1">
+              <li>
+                Telegram App တွင် <span className="text-sky-300 font-mono">@BotFather</span> သို့ သွားပြီး <code>/newbot</code> ရိုက်ကာ Bot အသစ်ပြုလုပ်ပြီး <b>Bot Token</b> ကို ကူးယူပါ
+              </li>
+              <li>
+                မိမိ စာတန်းထိုးဖိုင် တင်လိုသော <b>Telegram Channel</b> ထဲသို့ မိမိပြုလုပ်ထားသော Bot ကို <b>Administrator</b> အဖြစ် ထည့်သွင်းပေးပါ (<b>Post Messages</b> ခွင့်ပြုချက် ပေးပါ)
+              </li>
+              <li>
+                အောက်ပါ အကွက်များတွင် <b>Bot Token</b> နှင့် <b>Channel Username (ဥပမာ: @my_channel_name)</b> သို့မဟုတ် Channel ID ကို ထည့်ပါ
+              </li>
+              <li>
+                <b>"စမ်းသပ်မက်ဆေ့ခ်ျ ပို့ကြည့်မည်"</b> ခလုတ်ကို နှိပ်၍ ချိတ်ဆက်မှု အောင်မြင်ကြောင်း စစ်ဆေးပါ
+              </li>
+            </ol>
+          </div>
+
+          <div className="space-y-4">
+            {/* Auto Send Toggle */}
+            <div className="bg-slate-950 border border-slate-800 p-4 rounded-xl flex items-center justify-between">
+              <div>
+                <label className="text-xs font-bold text-slate-200 block">
+                  ဖိုင် ဒေါင်းလုဒ်ဆွဲသည့် အချိန်တွင် Telegram Channel သို့ အလိုအလျောက် ပို့မည် (Auto-Sync)
+                </label>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  ဖွင့်ထားပါက အသုံးပြုသူများ Subtitle Export လုပ်တိုင်း Telegram Channel ဆီသို့ ဖိုင်ကို ရောက်ရှိစေမည်ဖြစ်သည်
+                </p>
+              </div>
+              <label className="relative inline-flex items-center cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={telegramForm.sendOnDownload}
+                  onChange={(e) =>
+                    setTelegramForm({ ...telegramForm, sendOnDownload: e.target.checked })
+                  }
+                  className="sr-only peer"
+                />
+                <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-sky-500"></div>
+              </label>
+            </div>
+
+            {/* Telegram Bot Token */}
+            <div>
+              <div className="flex items-center justify-between mb-1">
+                <label className="text-xs font-semibold text-slate-300">
+                  Telegram Bot API Token:
+                </label>
+                <button
+                  type="button"
+                  onClick={() => setShowBotToken(!showBotToken)}
+                  className="text-[11px] text-slate-400 hover:text-slate-200 flex items-center space-x-1"
+                >
+                  <Eye className="w-3.5 h-3.5" />
+                  <span>{showBotToken ? 'ဝှက်မည်' : 'ပြမည်'}</span>
+                </button>
+              </div>
+              <input
+                type={showBotToken ? 'text' : 'password'}
+                value={telegramForm.botToken}
+                onChange={(e) =>
+                  setTelegramForm({ ...telegramForm, botToken: e.target.value })
+                }
+                placeholder="1234567890:ABCdefGhIJKlmNoPQRsTUVwxyZ..."
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-sky-500 transition"
+              />
+            </div>
+
+            {/* Channel ID / Username */}
+            <div>
+              <label className="text-xs font-semibold text-slate-300 mb-1 block">
+                Telegram Channel Username သို့မဟုတ် Channel ID:
+              </label>
+              <input
+                type="text"
+                value={telegramForm.channelId}
+                onChange={(e) =>
+                  setTelegramForm({ ...telegramForm, channelId: e.target.value })
+                }
+                placeholder="@my_anime_subs သို့မဟုတ် -1001234567890"
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-sky-500 transition"
+              />
+              <p className="text-[11px] text-slate-500 mt-1">
+                Public Channel ဖြစ်ပါက <code>@channel_username</code> ထည့်နိုင်ပြီး Private Channel ဖြစ်ပါက <code>-100xxxxxxxxx</code> ထည့်ပါ
+              </p>
+            </div>
+
+            {/* Caption Template */}
+            <div>
+              <label className="text-xs font-semibold text-slate-300 mb-1 block">
+                Telegram တွင် ဖိုင်နှင့်အတူ တွဲပို့ပေးမည့် Message Caption ပုံစံ:
+              </label>
+              <textarea
+                rows={4}
+                value={telegramForm.captionTemplate}
+                onChange={(e) =>
+                  setTelegramForm({ ...telegramForm, captionTemplate: e.target.value })
+                }
+                placeholder="Telegram Caption Template..."
+                className="w-full bg-slate-950 border border-slate-800 rounded-xl p-3 text-xs text-slate-100 font-mono focus:outline-none focus:border-sky-500 transition leading-relaxed"
+              />
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                <span className="text-[10px] text-slate-400">အသုံးပြုနိုင်သော Tags:</span>
+                {['{fileName}', '{subtitleCount}', '{format}', '{contentMode}', '{savedAt}'].map((tag) => (
+                  <button
+                    key={tag}
+                    type="button"
+                    onClick={() =>
+                      setTelegramForm({
+                        ...telegramForm,
+                        captionTemplate: (telegramForm.captionTemplate || '') + ' ' + tag,
+                      })
+                    }
+                    className="text-[10px] bg-slate-800 hover:bg-slate-700 text-sky-300 px-2 py-0.5 rounded-lg border border-slate-700 font-mono"
+                  >
+                    + {tag}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          {/* Test Telegram Feedback */}
+          {telegramTestResult && (
+            <div
+              className={`p-3 rounded-xl text-xs flex items-center space-x-2 border animate-fadeIn ${
+                telegramTestResult.success
+                  ? 'bg-emerald-950/60 border-emerald-500/40 text-emerald-300'
+                  : 'bg-rose-950/60 border-rose-500/40 text-rose-300'
+              }`}
+            >
+              {telegramTestResult.success ? (
+                <CheckCircle2 className="w-4 h-4 text-emerald-400 flex-shrink-0" />
+              ) : (
+                <X className="w-4 h-4 text-rose-400 flex-shrink-0" />
+              )}
+              <span>{telegramTestResult.message}</span>
+            </div>
+          )}
+
+          {/* Action Buttons */}
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-3 pt-3 border-t border-slate-800">
+            <button
+              type="button"
+              onClick={handleTestTelegram}
+              disabled={isTestingTelegram || !telegramForm.botToken || !telegramForm.channelId}
+              className="w-full sm:w-auto px-4 py-2.5 bg-slate-800 hover:bg-slate-700 disabled:opacity-50 text-sky-300 font-semibold text-xs rounded-xl border border-slate-700 transition flex items-center justify-center space-x-2"
+            >
+              <Send className={`w-3.5 h-3.5 ${isTestingTelegram ? 'animate-bounce' : ''}`} />
+              <span>{isTestingTelegram ? 'စမ်းသပ်မက်ဆေ့ခ်ျ ပို့နေသည်...' : 'စမ်းသပ်မက်ဆေ့ခ်ျ ပို့ကြည့်မည် (Test)'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleSaveTelegramConfig}
+              disabled={isSavingTelegram}
+              className="w-full sm:w-auto px-6 py-2.5 bg-sky-600 hover:bg-sky-500 disabled:opacity-50 text-white font-semibold text-xs rounded-xl shadow-lg shadow-sky-600/20 transition flex items-center justify-center space-x-2"
+            >
+              <Save className="w-4 h-4" />
+              <span>{isSavingTelegram ? 'သိမ်းဆည်းနေပါသည်...' : 'Telegram ဆက်တင် သိမ်းဆည်းမည်'}</span>
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Tab 3: Saved Files Manager */}
       {activeTab === 'files' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 shadow-sm">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-4">
@@ -699,7 +1052,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </div>
       )}
 
-      {/* Tab 3: Change Password */}
+      {/* Tab 4: Change Password */}
       {activeTab === 'password' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 max-w-md shadow-sm">
           <div className="border-b border-slate-800 pb-3">
@@ -799,3 +1152,4 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     </div>
   );
 };
+

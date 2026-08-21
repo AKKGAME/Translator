@@ -129,11 +129,11 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
         <div className="flex items-center justify-between border-b border-slate-800 pb-3">
           <div className="flex items-center space-x-2.5">
             <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-xl border border-emerald-500/20">
-              <Sparkles className="w-5 h-5" />
+              <Settings className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-100">
-                ဘာသာပြန် ဆက်တင်များ (Translation Options)
+              <h3 className="text-base font-bold text-slate-100 flex items-center space-x-2">
+                <span>ဘာသာပြန် ဆက်တင်များ (Translation Settings)</span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
                 AI ဖြင့် အလိုအလျောက် ဘာသာပြန်မည် သို့မဟုတ် ကိုယ်တိုင် ပြင်ဆင်မည်ကို ရွေးချယ်ပါ
@@ -148,7 +148,7 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
           </button>
         </div>
 
-        {/* Translation Method Selector Tabs */}
+        {/* 2 Main Method Selector Tabs */}
         <div className="grid grid-cols-2 gap-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800">
           <button
             type="button"

@@ -76,7 +76,7 @@ export default function App() {
     };
   });
 
-  // Fetch server donation config on mount
+  // Fetch server donation config & telegram config on mount
   React.useEffect(() => {
     fetch('/api/donation-config')
       .then((res) => {
@@ -490,6 +490,7 @@ export default function App() {
       <main className="flex-1 pb-12">
         {activeTab === 'admin' ? (
           <AdminPanel
+            onBackToUserPanel={() => setActiveTab('subtitles')}
             onUpdateDonationConfig={(cfg) =>
               setTranslationSettings((prev) => ({ ...prev, donationConfig: cfg }))
             }

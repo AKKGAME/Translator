@@ -17,6 +17,7 @@ const DATA_DIR = path.join(process.cwd(), 'data');
 const SAVED_SUBS_DIR = path.join(DATA_DIR, 'saved_subtitles');
 const DONATION_CONFIG_FILE = path.join(DATA_DIR, 'donation_config.json');
 const ADMIN_CONFIG_FILE = path.join(DATA_DIR, 'admin_config.json');
+const TELEGRAM_CONFIG_FILE = path.join(DATA_DIR, 'telegram_config.json');
 const SAVED_SUBS_MANIFEST_FILE = path.join(DATA_DIR, 'saved_subtitles_manifest.json');
 
 if (!fs.existsSync(DATA_DIR)) {
@@ -38,6 +39,14 @@ const DEFAULT_ADMIN = {
   password: process.env.ADMIN_PASSWORD || 'admin123',
 };
 
+const DEFAULT_TELEGRAM = {
+  botToken: process.env.TELEGRAM_BOT_TOKEN || '',
+  channelId: process.env.TELEGRAM_CHANNEL_ID || '',
+  enabled: true,
+  captionTemplate: '🎬 <b>ဘာသာပြန် စာတန်းထိုးဖိုင်:</b> <code>{fileName}</code>\n📝 <b>အမျိုးအစား:</b> {contentMode} ({format})\n📊 <b>စာကြောင်းရေ:</b> {subtitleCount} ကြောင်း\n⏱ <b>သိမ်းဆည်းချိန်:</b> {savedAt}\n✨ <b>Translated with:</b> AnimeGabar AI Subtitle Translator',
+  sendOnDownload: true,
+};
+
 function getDonationConfig() {
   try {
     if (fs.existsSync(DONATION_CONFIG_FILE)) {
@@ -52,6 +61,22 @@ function getDonationConfig() {
 
 function saveDonationConfig(config: any) {
   fs.writeFileSync(DONATION_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+}
+
+function getTelegramConfig() {
+  try {
+    if (fs.existsSync(TELEGRAM_CONFIG_FILE)) {
+      const data = fs.readFileSync(TELEGRAM_CONFIG_FILE, 'utf-8');
+      return { ...DEFAULT_TELEGRAM, ...JSON.parse(data) };
+    }
+  } catch (err) {
+    console.error('Error reading telegram_config.json:', err);
+  }
+  return DEFAULT_TELEGRAM;
+}
+
+function saveTelegramConfig(config: any) {
+  fs.writeFileSync(TELEGRAM_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
 }
 
 function getAdminConfig() {
@@ -92,9 +117,262 @@ function checkAdminAuth(req: express.Request): boolean {
   return Boolean(provided && provided === adminPass);
 }
 
+// Telegram Helper Function: Send Subtitle Document to Telegram Channel/Chat
+async function sendDocumentToTelegram(options: {
+  botToken: string;
+  channelId: string;
+  fileName: string;
+  content: string;
+  caption?: string;
+}) {
+  const { botToken, channelId, fileName, content, caption } = options;
+  if (!botToken || !channelId) {
+    throw new Error('Telegram Bot Token သို့မဟုတ် Channel ID မရှိပါ');
+  }
+
+  const cleanToken = botToken.trim();
+  const cleanChatId = channelId.trim();
+
+  // Create form data using native FormData and Blob
+  const formData = new FormData();
+  formData.append('chat_id', cleanChatId);
+
+  // Subtitle document with UTF-8 BOM for flawless Burmese font rendering
+  const fileBlob = new Blob(['\uFEFF' + content], { type: 'text/plain;charset=utf-8' });
+  formData.append('document', fileBlob, fileName);
+
+  if (caption) {
+    formData.append('caption', caption);
+    formData.append('parse_mode', 'HTML');
+  }
+
+  const telegramUrl = `https://api.telegram.org/bot${cleanToken}/sendDocument`;
+  const response = await fetch(telegramUrl, {
+    method: 'POST',
+    body: formData,
+  });
+
+  const data: any = await response.json();
+  if (!response.ok || !data.ok) {
+    const errorDesc = data?.description || 'Telegram Bot API error';
+    throw new Error(errorDesc);
+  }
+
+  return data;
+}
+
 // Public Donation Config API
 app.get('/api/donation-config', (req, res) => {
   res.json(getDonationConfig());
+});
+
+// Public Telegram Config Status API
+app.get('/api/telegram-config', (req, res) => {
+  const config = getTelegramConfig();
+  const isConfigured = Boolean(config.botToken && config.channelId);
+  res.json({
+    isConfigured,
+    channelId: config.channelId ? config.channelId.replace(/(?<=.{3}).(?=.{3})/g, '*') : '',
+    rawChannelId: config.channelId || '',
+    enabled: Boolean(config.enabled),
+    sendOnDownload: Boolean(config.sendOnDownload),
+  });
+});
+
+// Admin Telegram Config APIs
+app.get('/api/admin/telegram-config', (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  res.json(getTelegramConfig());
+});
+
+app.post('/api/admin/update-telegram-config', (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  const { telegramConfig } = req.body;
+  if (!telegramConfig) {
+    return res.status(400).json({ error: 'telegramConfig is required' });
+  }
+  saveTelegramConfig(telegramConfig);
+  res.json({ success: true, telegramConfig });
+});
+
+// Public endpoint for users to test their Telegram Bot & Channel
+app.post('/api/test-telegram', async (req, res) => {
+  try {
+    const { botToken, channelId } = req.body;
+    const currentConfig = getTelegramConfig();
+    const tokenToUse = (botToken && typeof botToken === 'string' && botToken.trim()) || currentConfig.botToken;
+    const channelToUse = (channelId && typeof channelId === 'string' && channelId.trim()) || currentConfig.channelId;
+
+    if (!tokenToUse || !channelToUse) {
+      return res.status(400).json({ error: 'Telegram Bot Token နှင့် Channel ID ထည့်သွင်းပေးပါ' });
+    }
+
+    const testText = `🚀 <b>AnimeGabar Subtitle Translator</b>\n\n✅ Telegram Channel ချိတ်ဆက်မှု အောင်မြင်ပါသည်!\n⏰ အချိန်: ${new Date().toLocaleString('my-MM')}\n\nဘာသာပြန်ပြီး စာတန်းထိုးဖိုင် (.srt / .vtt) များကို ဤ Channel ဆီသို့ အလိုအလျောက် ပို့ပေးပါမည်။`;
+
+    const url = `https://api.telegram.org/bot${tokenToUse.trim()}/sendMessage`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: channelToUse.trim(),
+        text: testText,
+        parse_mode: 'HTML',
+      }),
+    });
+
+    const data: any = await response.json();
+    if (!response.ok || !data.ok) {
+      const desc = data?.description || 'Telegram Bot သို့ မက်ဆေ့ခ်ျ ပို့၍ မရပါ';
+      return res.status(400).json({
+        success: false,
+        error: `Telegram Error: ${desc} (Bot ကို Channel တွင် Admin အဖြစ် ထည့်သွင်းထားကြောင်းနှင့် Post Messages ခွင့်ပြုချက် ပေးထားကြောင်း စစ်ဆေးပါ)`,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Telegram Channel သို့ စမ်းသပ်မက်ဆေ့ခ်ျ ပို့ပြီးပါပြီ!',
+      chatTitle: data.result?.chat?.title || channelToUse,
+    });
+  } catch (err: any) {
+    console.error('Error testing Telegram config:', err);
+    res.status(500).json({
+      success: false,
+      error: err.message || 'Telegram စမ်းသပ်မှု မအောင်မြင်ပါ',
+    });
+  }
+});
+
+// Public Telegram Config status for client (safe, no bot token revealed)
+app.get('/api/public-telegram-config', (req, res) => {
+  const config = getTelegramConfig();
+  res.json({
+    configured: Boolean(config.botToken && config.channelId),
+    channelId: config.channelId ? (config.channelId.startsWith('@') ? config.channelId : config.channelId.replace(/^(.{4}).*(.{3})$/, '$1***$2')) : '',
+    sendOnDownload: config.sendOnDownload,
+    enabled: config.enabled,
+    hasToken: Boolean(config.botToken),
+  });
+});
+
+app.post('/api/admin/test-telegram', async (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  try {
+    const { botToken, channelId } = req.body;
+    const currentConfig = getTelegramConfig();
+    const tokenToUse = (botToken && typeof botToken === 'string' && botToken.trim()) || currentConfig.botToken;
+    const channelToUse = (channelId && typeof channelId === 'string' && channelId.trim()) || currentConfig.channelId;
+
+    if (!tokenToUse || !channelToUse) {
+      return res.status(400).json({ error: 'Telegram Bot Token နှင့် Channel ID ထည့်သွင်းပေးပါ' });
+    }
+
+    const testText = `🚀 <b>AnimeGabar Subtitle Translator</b>\n\n✅ Telegram Channel ချိတ်ဆက်မှု အောင်မြင်ပါသည်!\n⏰ အချိန်: ${new Date().toLocaleString('my-MM')}\n\nဘာသာပြန်ပြီး စာတန်းထိုးဖိုင် (.srt / .vtt) များကို ဤ Channel ဆီသို့ အလိုအလျောက် ပို့ပေးပါမည်။`;
+
+    const url = `https://api.telegram.org/bot${tokenToUse.trim()}/sendMessage`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: channelToUse.trim(),
+        text: testText,
+        parse_mode: 'HTML',
+      }),
+    });
+
+    const data: any = await response.json();
+    if (!response.ok || !data.ok) {
+      const desc = data?.description || 'Telegram Bot သို့ မက်ဆေ့ခ်ျ ပို့၍ မရပါ';
+      return res.status(400).json({
+        success: false,
+        error: `Telegram Error: ${desc} (Bot ကို Channel တွင် Admin အဖြစ် ထည့်သွင်းထားကြောင်းနှင့် Post Messages ခွင့်ပြုချက် ပေးထားကြောင်း စစ်ဆေးပါ)`,
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Telegram Channel သို့ စမ်းသပ်မက်ဆေ့ခ်ျ ပို့ပြီးပါပြီ!',
+      chatTitle: data.result?.chat?.title || channelToUse,
+    });
+  } catch (err: any) {
+    console.error('Error testing Telegram config:', err);
+    res.status(500).json({
+      success: false,
+      error: err.message || 'Telegram စမ်းသပ်မှု မအောင်မြင်ပါ',
+    });
+  }
+});
+
+// Send Subtitle Document to Telegram API (Called on Download/Export)
+app.post('/api/send-to-telegram', async (req, res) => {
+  try {
+    const { fileName, content, format, contentMode, subtitleCount, customBotToken, customChannelId, customCaption } = req.body;
+
+    if (!content || !fileName) {
+      return res.status(400).json({ error: 'fileName and content are required' });
+    }
+
+    const config = getTelegramConfig();
+    const botToken = (customBotToken && customBotToken.trim()) || config.botToken;
+    const channelId = (customChannelId && customChannelId.trim()) || config.channelId;
+
+    if (!botToken || !channelId) {
+      return res.status(400).json({
+        error: 'Telegram Bot Token သို့မဟုတ် Channel ID သတ်မှတ်ထားခြင်း မရှိပါ (Admin Panel / Settings တွင် ထည့်သွင်းပေးပါ)',
+      });
+    }
+
+    const modeName =
+      contentMode === 'translated'
+        ? 'မြန်မာစာတန်းထိုး သီးသန့်'
+        : contentMode === 'dual'
+        ? 'နှစ်ဘာသာ ပူးတွဲ (Dual)'
+        : 'မူရင်း';
+
+    const savedAtStr = new Date().toLocaleString('my-MM', {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    });
+
+    let caption = customCaption;
+    if (!caption) {
+      const template =
+        config.captionTemplate ||
+        '🎬 <b>ဘာသာပြန် စာတန်းထိုးဖိုင်:</b> <code>{fileName}</code>\n📝 <b>အမျိုးအစား:</b> {contentMode} ({format})\n📊 <b>စာကြောင်းရေ:</b> {subtitleCount} ကြောင်း\n⏱ <b>သိမ်းဆည်းချိန်:</b> {savedAt}\n✨ <b>Translated with:</b> AnimeGabar AI Subtitle Translator';
+
+      caption = template
+        .replace(/{fileName}/g, fileName)
+        .replace(/{contentMode}/g, modeName)
+        .replace(/{format}/g, (format || 'srt').toUpperCase())
+        .replace(/{subtitleCount}/g, String(subtitleCount || 0))
+        .replace(/{savedAt}/g, savedAtStr);
+    }
+
+    const telegramRes = await sendDocumentToTelegram({
+      botToken,
+      channelId,
+      fileName,
+      content,
+      caption,
+    });
+
+    res.json({
+      success: true,
+      message: 'Telegram Channel သို့ ဖိုင် အောင်မြင်စွာ ပို့ပြီးပါပြီ',
+      telegramResult: telegramRes.result,
+    });
+  } catch (error: any) {
+    console.error('Error sending subtitle file to Telegram:', error);
+    res.status(500).json({
+      error: error.message || 'Telegram Channel သို့ ဖိုင် ပို့ဆောင်၍ မရပါ',
+    });
+  }
 });
 
 // Admin Authentication APIs
@@ -132,9 +410,9 @@ app.post('/api/admin/update-password', (req, res) => {
 });
 
 // Public Subtitle File Saving API (Called when user translates/exports subtitle)
-app.post('/api/save-subtitle-file', (req, res) => {
+app.post('/api/save-subtitle-file', async (req, res) => {
   try {
-    const { fileName, content, format, contentMode, subtitleCount } = req.body;
+    const { fileName, content, format, contentMode, subtitleCount, sendTelegram } = req.body;
     if (!content || !fileName) {
       return res.status(400).json({ error: 'fileName and content are required' });
     }
@@ -162,7 +440,55 @@ app.post('/api/save-subtitle-file', (req, res) => {
     manifest.unshift(itemMeta); // newest first
     saveSubsManifest(manifest);
 
-    res.json({ success: true, file: itemMeta });
+    // Check if auto-send to Telegram channel is enabled
+    const telegramConfig = getTelegramConfig();
+    let telegramSent = false;
+    let telegramError = null;
+
+    if (
+      (sendTelegram !== false && telegramConfig.enabled && telegramConfig.sendOnDownload) &&
+      telegramConfig.botToken &&
+      telegramConfig.channelId
+    ) {
+      try {
+        const modeName =
+          contentMode === 'translated'
+            ? 'မြန်မာစာတန်းထိုး သီးသန့်'
+            : contentMode === 'dual'
+            ? 'နှစ်ဘာသာ ပူးတွဲ (Dual)'
+            : 'မူရင်း';
+
+        const savedAtStr = new Date().toLocaleString('my-MM', {
+          dateStyle: 'medium',
+          timeStyle: 'short',
+        });
+
+        const template =
+          telegramConfig.captionTemplate ||
+          '🎬 <b>ဘာသာပြန် စာတန်းထိုးဖိုင်:</b> <code>{fileName}</code>\n📝 <b>အမျိုးအစား:</b> {contentMode} ({format})\n📊 <b>စာကြောင်းရေ:</b> {subtitleCount} ကြောင်း\n⏱ <b>သိမ်းဆည်းချိန်:</b> {savedAt}\n✨ <b>Translated with:</b> AnimeGabar AI Subtitle Translator';
+
+        const caption = template
+          .replace(/{fileName}/g, fileName)
+          .replace(/{contentMode}/g, modeName)
+          .replace(/{format}/g, (format || 'srt').toUpperCase())
+          .replace(/{subtitleCount}/g, String(subtitleCount || 0))
+          .replace(/{savedAt}/g, savedAtStr);
+
+        await sendDocumentToTelegram({
+          botToken: telegramConfig.botToken,
+          channelId: telegramConfig.channelId,
+          fileName,
+          content,
+          caption,
+        });
+        telegramSent = true;
+      } catch (tgErr: any) {
+        console.warn('Auto send to Telegram warning:', tgErr?.message || tgErr);
+        telegramError = tgErr?.message || 'Telegram dispatch failed';
+      }
+    }
+
+    res.json({ success: true, file: itemMeta, telegramSent, telegramError });
   } catch (error: any) {
     console.error('Error saving subtitle file on server:', error);
     res.status(500).json({ error: 'Failed to save subtitle file on server' });

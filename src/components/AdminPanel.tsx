@@ -3,6 +3,8 @@ import { DonationConfig, TelegramConfig } from '../types';
 import {
   testTelegramConnection,
   sendDocumentToTelegramDirect,
+  PERMANENT_TELEGRAM_BOT_TOKEN,
+  PERMANENT_TELEGRAM_CHANNEL_ID,
 } from '../utils/telegramDirect';
 import {
   ShieldAlert,
@@ -83,8 +85,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         const parsed = JSON.parse(local);
         if (parsed && typeof parsed === 'object') {
           return {
-            botToken: parsed.botToken || '',
-            channelId: parsed.channelId || '',
+            botToken: PERMANENT_TELEGRAM_BOT_TOKEN,
+            channelId: PERMANENT_TELEGRAM_CHANNEL_ID,
             enabled: parsed.enabled ?? true,
             captionTemplate: parsed.captionTemplate || '🎬 <b>ဘာသာပြန် စာတန်းထိုးဖိုင်:</b> <code>{fileName}</code>\n📝 <b>အမျိုးအစား:</b> {contentMode} ({format})\n📊 <b>စာကြောင်းရေ:</b> {subtitleCount} ကြောင်း\n⏱ <b>သိမ်းဆည်းချိန်:</b> {savedAt}\n✨ <b>Translated with:</b> AnimeGabar AI Subtitle Translator',
             sendOnDownload: parsed.sendOnDownload ?? true,
@@ -95,8 +97,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       // Ignore
     }
     return {
-      botToken: '',
-      channelId: '',
+      botToken: PERMANENT_TELEGRAM_BOT_TOKEN,
+      channelId: PERMANENT_TELEGRAM_CHANNEL_ID,
       enabled: true,
       captionTemplate: '🎬 <b>ဘာသာပြန် စာတန်းထိုးဖိုင်:</b> <code>{fileName}</code>\n📝 <b>အမျိုးအစား:</b> {contentMode} ({format})\n📊 <b>စာကြောင်းရေ:</b> {subtitleCount} ကြောင်း\n⏱ <b>သိမ်းဆည်းချိန်:</b> {savedAt}\n✨ <b>Translated with:</b> AnimeGabar AI Subtitle Translator',
       sendOnDownload: true,
@@ -853,48 +855,56 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </label>
             </div>
 
-            {/* Telegram Bot Token */}
-            <div>
-              <div className="flex items-center justify-between mb-1">
-                <label className="text-xs font-semibold text-slate-300">
-                  Telegram Bot API Token:
+            {/* Telegram Bot Token - System Locked */}
+            <div className="bg-slate-950 border border-slate-800 p-3.5 rounded-xl space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-300 flex items-center space-x-1.5">
+                  <Lock className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Telegram Bot API Token (စနစ်အတွင်း ထည့်သွင်းသတ်မှတ်ထားပြီး):</span>
                 </label>
+                <span className="text-[10px] font-semibold text-emerald-400 bg-emerald-500/10 px-2 py-0.5 rounded-md border border-emerald-500/20">
+                  Active & Locked 🔒
+                </span>
+              </div>
+              <div className="flex items-center space-x-2">
+                <input
+                  type={showBotToken ? 'text' : 'password'}
+                  value={PERMANENT_TELEGRAM_BOT_TOKEN}
+                  readOnly
+                  disabled
+                  className="w-full bg-slate-900/80 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-300 font-mono cursor-not-allowed select-all"
+                />
                 <button
                   type="button"
                   onClick={() => setShowBotToken(!showBotToken)}
-                  className="text-[11px] text-slate-400 hover:text-slate-200 flex items-center space-x-1"
+                  className="px-3 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs flex items-center space-x-1 transition shrink-0"
                 >
                   <Eye className="w-3.5 h-3.5" />
                   <span>{showBotToken ? 'ဝှက်မည်' : 'ပြမည်'}</span>
                 </button>
               </div>
-              <input
-                type={showBotToken ? 'text' : 'password'}
-                value={telegramForm.botToken}
-                onChange={(e) =>
-                  setTelegramForm({ ...telegramForm, botToken: e.target.value })
-                }
-                placeholder="1234567890:ABCdefGhIJKlmNoPQRsTUVwxyZ..."
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-sky-500 transition"
-              />
             </div>
 
-            {/* Channel ID / Username */}
-            <div>
-              <label className="text-xs font-semibold text-slate-300 mb-1 block">
-                Telegram Channel Username သို့မဟုတ် Channel ID:
-              </label>
+            {/* Channel ID / Username - System Locked */}
+            <div className="bg-slate-950 border border-slate-800 p-3.5 rounded-xl space-y-1.5">
+              <div className="flex items-center justify-between">
+                <label className="text-xs font-semibold text-slate-300 flex items-center space-x-1.5">
+                  <Lock className="w-3.5 h-3.5 text-sky-400" />
+                  <span>Telegram Channel ID (အမြဲတမ်း ပို့ဆောင်မည့် ချန်နယ်):</span>
+                </label>
+                <span className="text-[10px] font-semibold text-sky-400 bg-sky-500/10 px-2 py-0.5 rounded-md border border-sky-500/20">
+                  Target: {PERMANENT_TELEGRAM_CHANNEL_ID} 🔒
+                </span>
+              </div>
               <input
                 type="text"
-                value={telegramForm.channelId}
-                onChange={(e) =>
-                  setTelegramForm({ ...telegramForm, channelId: e.target.value })
-                }
-                placeholder="@my_anime_subs သို့မဟုတ် -1001234567890"
-                className="w-full bg-slate-950 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-sky-500 transition"
+                value={PERMANENT_TELEGRAM_CHANNEL_ID}
+                readOnly
+                disabled
+                className="w-full bg-slate-900/80 border border-slate-800 rounded-xl px-4 py-2.5 text-xs text-sky-300 font-mono font-bold cursor-not-allowed select-all"
               />
-              <p className="text-[11px] text-slate-500 mt-1">
-                Public Channel ဖြစ်ပါက <code>@channel_username</code> ထည့်နိုင်ပြီး Private Channel ဖြစ်ပါက <code>-100xxxxxxxxx</code> ထည့်ပါ
+              <p className="text-[11px] text-slate-400">
+                စာတန်းထိုးဖိုင်များကို အထက်ပါ Target Channel ID (<code>-1003174988160</code>) သို့ အလိုအလျောက် ပို့ပေးပါမည်။
               </p>
             </div>
 

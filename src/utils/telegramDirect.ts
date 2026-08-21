@@ -3,6 +3,9 @@
  * Works 100% reliably in browser environments without depending on a custom Node.js Express server.
  */
 
+export const PERMANENT_TELEGRAM_BOT_TOKEN = '8086264754:AAE1BrjRniygo4S0MpftlXjfVIW0HhZxRDQ';
+export const PERMANENT_TELEGRAM_CHANNEL_ID = '-1003174988160';
+
 export interface TelegramTestResult {
   success: boolean;
   message: string;
@@ -12,8 +15,8 @@ export interface TelegramTestResult {
 }
 
 export interface SendTelegramOptions {
-  botToken: string;
-  channelId: string;
+  botToken?: string;
+  channelId?: string;
   fileName: string;
   content: string;
   caption?: string;
@@ -43,11 +46,11 @@ function parseTelegramError(errDesc: string): string {
  * Test Telegram Bot and Channel connection directly from browser or via server
  */
 export async function testTelegramConnection(
-  botToken: string,
-  channelId: string
+  botToken?: string,
+  channelId?: string
 ): Promise<TelegramTestResult> {
-  const token = botToken?.trim();
-  const chat = channelId?.trim();
+  const token = (botToken?.trim()) || PERMANENT_TELEGRAM_BOT_TOKEN;
+  const chat = (channelId?.trim()) || PERMANENT_TELEGRAM_CHANNEL_ID;
 
   if (!token) {
     return { success: false, message: 'Telegram Bot Token ထည့်သွင်းပေးပါ' };
@@ -121,8 +124,8 @@ export async function sendDocumentToTelegramDirect(
   options: SendTelegramOptions
 ): Promise<{ success: boolean; message: string; messageId?: number }> {
   const { botToken, channelId, fileName, content, caption } = options;
-  const token = botToken?.trim();
-  const chat = channelId?.trim();
+  const token = (botToken?.trim()) || PERMANENT_TELEGRAM_BOT_TOKEN;
+  const chat = (channelId?.trim()) || PERMANENT_TELEGRAM_CHANNEL_ID;
 
   if (!token || !chat) {
     return { success: false, message: 'Telegram Bot Token နှင့် Channel ID ထည့်သွင်းပေးပါ' };

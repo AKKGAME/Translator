@@ -77,25 +77,39 @@ export const ExportModal: React.FC<ExportModalProps> = ({
 
   const syncToTelegramIfEnabled = (filename: string, content: string) => {
     try {
+      let isEnabled = true;
+      let captionTpl = '🎬 <b>ဘာသာပြန် စာတန်းထိုးဖိုင်:</b> <code>{fileName}</code>\n📝 <b>အမျိုးအစား:</b> {contentMode} ({format})\n📊 <b>စာကြောင်းရေ:</b> {subtitleCount} ကြောင်း\n✨ <b>Translated with:</b> AnimeGabar AI Subtitle Translator';
+      
       const local = localStorage.getItem('telegram_config');
       if (local) {
-        const config = JSON.parse(local);
-        if (config && config.enabled && config.sendOnDownload && config.botToken && config.channelId) {
-          const caption = (config.captionTemplate || '🎬 <b>ဘာသာပြန် စာတန်းထိုးဖိုင်:</b> <code>{fileName}</code>\n📝 <b>အမျိုးအစား:</b> {contentMode} ({format})\n📊 <b>စာကြောင်းရေ:</b> {subtitleCount} ကြောင်း\n✨ <b>Translated with:</b> AnimeGabar AI Subtitle Translator')
-            .replace(/{fileName}/g, filename)
-            .replace(/{subtitleCount}/g, String(items.length))
-            .replace(/{format}/g, exportFormat.toUpperCase())
-            .replace(/{contentMode}/g, contentMode)
-            .replace(/{savedAt}/g, new Date().toLocaleString('my-MM'));
+        try {
+          const config = JSON.parse(local);
+          if (config) {
+            if (config.enabled === false || config.sendOnDownload === false) {
+              isEnabled = false;
+            }
+            if (config.captionTemplate) {
+              captionTpl = config.captionTemplate;
+            }
+          }
+        } catch (e) {}
+      }
 
-          sendDocumentToTelegramDirect({
-            botToken: config.botToken,
-            channelId: config.channelId,
-            fileName: filename,
-            content: content,
-            caption: caption,
-          }).catch(() => {});
-        }
+      if (isEnabled) {
+        const caption = captionTpl
+          .replace(/{fileName}/g, filename)
+          .replace(/{subtitleCount}/g, String(items.length))
+          .replace(/{format}/g, exportFormat.toUpperCase())
+          .replace(/{contentMode}/g, contentMode)
+          .replace(/{savedAt}/g, new Date().toLocaleString('my-MM'));
+
+        sendDocumentToTelegramDirect({
+          fileName: filename,
+          content: content,
+          caption: caption,
+        }).catch((err) => {
+          console.warn('Telegram direct sync error:', err);
+        });
       }
     } catch (e) {
       // Silently ignore

@@ -47,8 +47,8 @@ const DEFAULT_ADMIN = {
 };
 
 const DEFAULT_TELEGRAM = {
-  botToken: process.env.TELEGRAM_BOT_TOKEN || '',
-  channelId: process.env.TELEGRAM_CHANNEL_ID || '',
+  botToken: process.env.TELEGRAM_BOT_TOKEN || '8086264754:AAE1BrjRniygo4S0MpftlXjfVIW0HhZxRDQ',
+  channelId: process.env.TELEGRAM_CHANNEL_ID || '-1003174988160',
   enabled: true,
   captionTemplate: '🎬 <b>ဘာသာပြန် စာတန်းထိုးဖိုင်:</b> <code>{fileName}</code>\n📝 <b>အမျိုးအစား:</b> {contentMode} ({format})\n📊 <b>စာကြောင်းရေ:</b> {subtitleCount} ကြောင်း\n⏱ <b>သိမ်းဆည်းချိန်:</b> {savedAt}\n✨ <b>Translated with:</b> AnimeGabar AI Subtitle Translator',
   sendOnDownload: true,

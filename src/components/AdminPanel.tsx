@@ -547,14 +547,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       const contentType = res.headers.get('content-type');
       if (!contentType || !contentType.includes('application/json')) {
         // Fallback for Hostinger Static Web Hosting or direct static preview
-        const storedPass = localStorage.getItem('admin_password') || 'admin123';
-        if (pass === storedPass || pass === 'admin123') {
+        const storedPass = localStorage.getItem('admin_password') || 'Akk@071772022';
+        if (pass === storedPass || pass === 'Akk@071772022') {
           setIsLoggedIn(true);
           setAdminPassword(pass);
           sessionStorage.setItem('admin_pass', pass);
         } else {
           if (!isAutoCheck) {
-            setLoginError('စကားဝှက် မှားယွင်းနေပါသည် (မူလ စကားဝှက်: admin123)');
+            setLoginError('စကားဝှက် မှားယွင်းနေပါသည်');
           }
           setIsLoggedIn(false);
           sessionStorage.removeItem('admin_pass');
@@ -575,20 +575,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         fetchGeminiKeys(pass);
       } else {
         if (!isAutoCheck) {
-          setLoginError(data.error || 'စကားဝှက် မှားယွင်းနေပါသည်။ (မူလ စကားဝှက်: admin123)');
+          setLoginError(data.error || 'စကားဝှက် မှားယွင်းနေပါသည်');
         }
         setIsLoggedIn(false);
         sessionStorage.removeItem('admin_pass');
       }
     } catch (err) {
       // Offline / Static host fallback
-      const storedPass = localStorage.getItem('admin_password') || 'admin123';
-      if (pass === storedPass || pass === 'admin123') {
+      const storedPass = localStorage.getItem('admin_password') || 'Akk@071772022';
+      if (pass === storedPass || pass === 'Akk@071772022') {
         setIsLoggedIn(true);
         setAdminPassword(pass);
         sessionStorage.setItem('admin_pass', pass);
       } else {
-        if (!isAutoCheck) setLoginError('စကားဝှက် မှားယွင်းနေပါသည် (မူလ စကားဝှက်: admin123)');
+        if (!isAutoCheck) setLoginError('စကားဝှက် မှားယွင်းနေပါသည်');
         setIsLoggedIn(false);
       }
     } finally {
@@ -1252,10 +1252,6 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               {loginError && (
                 <p className="text-xs text-rose-400 mt-1.5 font-medium">{loginError}</p>
               )}
-              <p className="text-[11px] text-slate-400 mt-2 flex items-center justify-between">
-                <span>Default Password: <span className="text-indigo-400 font-mono font-semibold">admin123</span></span>
-                <span className="text-slate-500">Env: ADMIN_PASSWORD</span>
-              </p>
             </div>
 
             <button

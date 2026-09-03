@@ -85,7 +85,7 @@ const DEFAULT_DONATION = {
 };
 
 const DEFAULT_ADMIN = {
-  password: process.env.ADMIN_PASSWORD || 'admin123',
+  password: process.env.ADMIN_PASSWORD || 'Akk@071772022',
 };
 
 const DEFAULT_TELEGRAM = {
@@ -326,7 +326,7 @@ function checkAdminAuth(req: express.Request): boolean {
   return (
     provided === adminPass ||
     (Boolean(envPass) && provided === envPass) ||
-    (provided === 'admin123' && (!adminPass || adminPass === 'admin123'))
+    (!adminPass && provided === 'Akk@071772022')
   );
 }
 
@@ -598,14 +598,14 @@ app.post('/api/admin/verify-login', (req, res) => {
   const isMatch =
     (cleanPass && cleanPass === adminPass) ||
     (cleanPass && envPass && cleanPass === envPass) ||
-    (cleanPass === 'admin123' && (!adminPass || adminPass === 'admin123'));
+    (cleanPass && !adminPass && cleanPass === 'Akk@071772022');
 
   if (isMatch) {
     return res.json({ success: true, message: 'Admin login successful' });
   }
   return res.status(401).json({
     success: false,
-    error: 'Admin စကားဝှက် မှားယွင်းနေပါသည် (Default: admin123)',
+    error: 'Admin စကားဝှက် မှားယွင်းနေပါသည်',
   });
 });
 

@@ -49,6 +49,53 @@ export interface TelegramConfig {
   sendOnDownload: boolean;
 }
 
+export interface AccessKeyItem {
+  id: string;
+  code: string; // e.g. "AG-VIP-8892"
+  label: string; // e.g. "User: Ko Aung (VIP)"
+  maxLines: number; // total quota in lines (0 = unlimited)
+  usedLines: number; // lines translated so far
+  expiresAt: string | null; // ISO string or null for lifetime
+  createdAt: string;
+  status: 'active' | 'revoked' | 'expired';
+  note?: string;
+}
+
+export interface GeminiKeyPoolItem {
+  id: string;
+  key: string; // API key string (or masked in client)
+  label: string;
+  status: 'active' | 'cooldown' | 'disabled' | 'error';
+  cooldownUntil?: number | null;
+  successCount: number;
+  errorCount: number;
+  lastUsedAt?: string | null;
+  lastErrorMsg?: string | null;
+  createdAt: string;
+}
+
+export interface UsageConfig {
+  freeTierDailyLimit: number; // default e.g. 50 lines / day
+  requireAccessKey: boolean; // if true, user MUST have a VIP key or their own Gemini API key
+  allowCustomApiKey: boolean; // allow users to bypass limit by entering their own free Gemini API key
+  adminDefaultGeminiKey?: string; // system-level gemini key provided by admin
+  geminiKeyPool?: GeminiKeyPoolItem[]; // Multi-Key Pool
+  loadBalancingStrategy?: 'round_robin' | 'least_used' | 'random';
+  announcementNotice?: string; // optional banner for users
+  contactTelegram?: string;
+  accessKeys: AccessKeyItem[];
+}
+
+export interface UserAccessStatus {
+  tier: 'free' | 'vip' | 'custom_key';
+  activeKey?: AccessKeyItem;
+  freeUsedToday: number;
+  freeDailyLimit: number;
+  remainingFreeLines: number;
+  canTranslate: boolean;
+  message?: string;
+}
+
 export interface TranslationSettings {
   style: TranslationStyle;
   tone: ToneStyle;
@@ -63,8 +110,10 @@ export interface TranslationSettings {
   conciseness: SubtitleConciseness;
   customPromptNote: string;
   customApiKey?: string;
+  accessCode?: string; // VIP Access Code
   donationConfig?: DonationConfig;
   telegramConfig?: TelegramConfig;
+  usageConfig?: UsageConfig;
 }
 
 export interface SubtitleFileMeta {

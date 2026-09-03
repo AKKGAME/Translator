@@ -1,0 +1,36 @@
+{
+  "freeTierDailyLimit": 50,
+  "requireAccessKey": false,
+  "allowCustomApiKey": true,
+  "adminDefaultGeminiKey": "",
+  "announcementNotice": "",
+  "contactTelegram": "@AnimeGabar",
+  "loadBalancingStrategy": "round_robin",
+  "geminiKeyPool": [
+    {
+      "id": "server-env-key-1",
+      "key": "AIzaSyDnCpPrUBWzjETWdgTVX646Im-6tS3JHvg",
+      "label": "Primary Server Gemini Key (ENV)",
+      "status": "active",
+      "cooldownUntil": null,
+      "successCount": 0,
+      "errorCount": 0,
+      "lastUsedAt": null,
+      "lastErrorMsg": null,
+      "createdAt": "2026-09-03T18:09:24.909Z"
+    }
+  ],
+  "accessKeys": [
+    {
+      "id": "demo-vip-1",
+      "code": "AG-VIP-PREMIUM",
+      "label": "VIP Unlimited Demo Key",
+      "maxLines": 0,
+      "usedLines": 0,
+      "expiresAt": null,
+      "createdAt": "2026-09-03T18:09:24.910Z",
+      "status": "active",
+      "note": "စနစ်စတင်ချိန် အစမ်းသုံးနိုင်သော VIP Key"
+    }
+  ]
+}

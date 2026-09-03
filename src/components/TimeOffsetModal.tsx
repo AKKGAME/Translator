@@ -199,16 +199,16 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/75 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl max-w-xl w-full p-5 sm:p-6 shadow-2xl space-y-5 my-auto max-h-[90vh] overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
+      <div className="bg-[#0e1219] border border-[#212734] rounded-lg max-w-xl w-full p-5 sm:p-6 shadow-2xl space-y-5 my-auto max-h-[90vh] overflow-y-auto">
         {/* Header Title */}
-        <div className="flex items-center justify-between border-b border-slate-800 pb-3">
+        <div className="flex items-center justify-between border-b border-[#212734] pb-3">
           <div className="flex items-center space-x-2.5">
-            <div className="p-2 bg-amber-500/10 text-amber-400 rounded-xl border border-amber-500/20">
+            <div className="p-2 bg-amber-500/10 text-amber-400 rounded-md border border-amber-500/20">
               <Clock className="w-5 h-5" />
             </div>
             <div>
-              <h3 className="text-base font-bold text-slate-100">
+              <h3 className="text-sm sm:text-base font-bold text-slate-100">
                 အချိန် ချိန်ညှိမှု (Subtitles Time Shift & Sync)
               </h3>
               <p className="text-[11px] text-slate-400">
@@ -218,14 +218,14 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-slate-100 hover:bg-slate-800 rounded-lg transition"
+            className="p-1.5 text-slate-400 hover:text-slate-100 hover:bg-[#1a202c] rounded transition"
           >
             <X className="w-5 h-5" />
           </button>
         </div>
 
         {/* 1. Scope Selection (ပြောင်းလဲမည့် စာကြောင်း အတိုင်းအတာ) */}
-        <div className="bg-slate-950 p-3.5 rounded-xl border border-slate-800 space-y-2.5">
+        <div className="bg-[#07090e] p-3.5 rounded-md border border-[#212734] space-y-2.5">
           <div className="flex items-center justify-between">
             <span className="text-xs font-bold text-slate-300 flex items-center space-x-1.5">
               <ListFilter className="w-3.5 h-3.5 text-emerald-400" />
@@ -239,10 +239,10 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
           <div className="grid grid-cols-3 gap-2">
             <button
               onClick={() => setScope('all')}
-              className={`py-1.5 px-2 rounded-lg text-xs font-medium border transition ${
+              className={`py-1.5 px-2 rounded-md text-xs font-medium border transition ${
                 scope === 'all'
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 font-bold'
-                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
+                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/50 font-bold'
+                  : 'bg-[#12161f] text-slate-400 border-[#212734] hover:bg-[#1a202c]'
               }`}
             >
               စာကြောင်း အားလုံး
@@ -250,10 +250,10 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
 
             <button
               onClick={() => setScope('range')}
-              className={`py-1.5 px-2 rounded-lg text-xs font-medium border transition ${
+              className={`py-1.5 px-2 rounded-md text-xs font-medium border transition ${
                 scope === 'range'
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 font-bold'
-                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
+                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/50 font-bold'
+                  : 'bg-[#12161f] text-slate-400 border-[#212734] hover:bg-[#1a202c]'
               }`}
             >
               သတ်မှတ် အပိုင်းအခြား
@@ -261,10 +261,10 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
 
             <button
               onClick={() => setScope('fromCursor')}
-              className={`py-1.5 px-2 rounded-lg text-xs font-medium border transition ${
+              className={`py-1.5 px-2 rounded-md text-xs font-medium border transition ${
                 scope === 'fromCursor'
-                  ? 'bg-emerald-500/20 text-emerald-300 border-emerald-500/50 font-bold'
-                  : 'bg-slate-900 text-slate-400 border-slate-800 hover:bg-slate-800'
+                  ? 'bg-emerald-500/15 text-emerald-300 border-emerald-500/50 font-bold'
+                  : 'bg-[#12161f] text-slate-400 border-[#212734] hover:bg-[#1a202c]'
               }`}
             >
               #X မှ အဆုံးအထိ
@@ -281,7 +281,7 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
                 max={maxIdx}
                 value={fromIndex}
                 onChange={(e) => setFromIndex(Math.max(1, Number(e.target.value)))}
-                className="w-20 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs text-center font-mono text-slate-100 focus:outline-none focus:border-emerald-500"
+                className="w-20 bg-[#12161f] border border-[#212734] rounded-md px-2 py-1 text-xs text-center font-mono text-slate-100 focus:outline-none focus:border-emerald-500"
               />
               <span className="text-xs text-slate-400">မှ #</span>
               <input
@@ -290,7 +290,7 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
                 max={maxIdx}
                 value={toIndex}
                 onChange={(e) => setToIndex(Math.min(maxIdx, Number(e.target.value)))}
-                className="w-20 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs text-center font-mono text-slate-100 focus:outline-none focus:border-emerald-500"
+                className="w-20 bg-[#12161f] border border-[#212734] rounded-md px-2 py-1 text-xs text-center font-mono text-slate-100 focus:outline-none focus:border-emerald-500"
               />
               <span className="text-xs text-slate-400">အထိ</span>
             </div>
@@ -305,7 +305,7 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
                 max={maxIdx}
                 value={fromIndex}
                 onChange={(e) => setFromIndex(Math.max(1, Number(e.target.value)))}
-                className="w-20 bg-slate-900 border border-slate-800 rounded-lg px-2 py-1 text-xs text-center font-mono text-slate-100 focus:outline-none focus:border-emerald-500"
+                className="w-20 bg-[#12161f] border border-[#212734] rounded-md px-2 py-1 text-xs text-center font-mono text-slate-100 focus:outline-none focus:border-emerald-500"
               />
               <span className="text-xs text-slate-400">မှစ၍ နောက်ဆုံး စာကြောင်းအထိ</span>
             </div>
@@ -314,10 +314,10 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
 
         {/* 2. Adjustment Mode Tabs (Offset Shift vs Speed Stretch) */}
         <div>
-          <div className="flex bg-slate-950 p-1 rounded-xl border border-slate-800 mb-3">
+          <div className="flex bg-[#07090e] p-1 rounded-md border border-[#212734] mb-3">
             <button
               onClick={() => setActiveTab('offset')}
-              className={`flex-1 flex items-center justify-center space-x-2 py-1.5 rounded-lg text-xs font-semibold transition ${
+              className={`flex-1 flex items-center justify-center space-x-2 py-1.5 rounded text-xs font-semibold transition ${
                 activeTab === 'offset'
                   ? 'bg-emerald-500 text-slate-950 shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
@@ -328,7 +328,7 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
             </button>
             <button
               onClick={() => setActiveTab('speed')}
-              className={`flex-1 flex items-center justify-center space-x-2 py-1.5 rounded-lg text-xs font-semibold transition ${
+              className={`flex-1 flex items-center justify-center space-x-2 py-1.5 rounded text-xs font-semibold transition ${
                 activeTab === 'speed'
                   ? 'bg-emerald-500 text-slate-950 shadow-sm'
                   : 'text-slate-400 hover:text-slate-200'
@@ -346,10 +346,10 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
               <div className="grid grid-cols-2 gap-2.5">
                 <button
                   onClick={() => setDirection('forward')}
-                  className={`p-2.5 rounded-xl border flex items-center justify-center space-x-2 text-xs font-bold transition ${
+                  className={`p-2.5 rounded-md border flex items-center justify-center space-x-2 text-xs font-bold transition ${
                     direction === 'forward'
-                      ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300'
-                      : 'bg-slate-950 border-slate-800 text-slate-400'
+                      ? 'bg-emerald-500/15 border-emerald-500/60 text-emerald-300'
+                      : 'bg-[#07090e] border-[#212734] text-slate-400'
                   }`}
                 >
                   <Plus className="w-4 h-4" />
@@ -357,10 +357,10 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
                 </button>
                 <button
                   onClick={() => setDirection('backward')}
-                  className={`p-2.5 rounded-xl border flex items-center justify-center space-x-2 text-xs font-bold transition ${
+                  className={`p-2.5 rounded-md border flex items-center justify-center space-x-2 text-xs font-bold transition ${
                     direction === 'backward'
-                      ? 'bg-amber-500/20 border-amber-500 text-amber-300'
-                      : 'bg-slate-950 border-slate-800 text-slate-400'
+                      ? 'bg-amber-500/15 border-amber-500/60 text-amber-300'
+                      : 'bg-[#07090e] border-[#212734] text-slate-400'
                   }`}
                 >
                   <Minus className="w-4 h-4" />
@@ -385,7 +385,7 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
                     <button
                       key={p.label}
                       onClick={() => addQuickOffset(p.val)}
-                      className="bg-slate-800 hover:bg-slate-700 text-emerald-400 border border-slate-700/80 px-2.5 py-1 rounded-lg text-xs font-mono font-semibold transition"
+                      className="bg-[#07090e] hover:bg-[#161c28] text-emerald-400 border border-[#212734] px-2.5 py-1 rounded text-xs font-mono font-semibold transition"
                     >
                       {p.label}
                     </button>
@@ -399,14 +399,14 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
                     <button
                       key={p.label}
                       onClick={() => addQuickOffset(p.val)}
-                      className="bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700/80 px-2.5 py-1 rounded-lg text-xs font-mono font-semibold transition"
+                      className="bg-[#07090e] hover:bg-[#161c28] text-amber-400 border border-[#212734] px-2.5 py-1 rounded text-xs font-mono font-semibold transition"
                     >
                       {p.label}
                     </button>
                   ))}
                   <button
                     onClick={handleReset}
-                    className="bg-slate-800 hover:bg-slate-700 text-slate-300 border border-slate-700 px-2 py-1 rounded-lg text-xs transition flex items-center space-x-1"
+                    className="bg-[#07090e] hover:bg-[#161c28] text-slate-300 border border-[#212734] px-2 py-1 rounded text-xs transition flex items-center space-x-1"
                     title="ပြန်စမည်"
                   >
                     <RotateCcw className="w-3 h-3" />
@@ -416,7 +416,7 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
               </div>
 
               {/* Time Inputs */}
-              <div className="grid grid-cols-3 gap-3 bg-slate-950 p-3 rounded-xl border border-slate-800">
+              <div className="grid grid-cols-3 gap-3 bg-[#07090e] p-3 rounded-md border border-[#212734]">
                 <div>
                   <label className="block text-[11px] text-slate-400 mb-1">မိနစ် (Mins):</label>
                   <input
@@ -425,7 +425,7 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
                     max={120}
                     value={minutes}
                     onChange={(e) => setMinutes(Math.max(0, Number(e.target.value)))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-[#12161f] border border-[#212734] rounded-md px-2.5 py-1.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
                 <div>
@@ -436,7 +436,7 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
                     max={59}
                     value={seconds}
                     onChange={(e) => setSeconds(Math.max(0, Number(e.target.value)))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-[#12161f] border border-[#212734] rounded-md px-2.5 py-1.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
                 <div>
@@ -450,7 +450,7 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
                     step={50}
                     value={milliseconds}
                     onChange={(e) => setMilliseconds(Math.max(0, Number(e.target.value)))}
-                    className="w-full bg-slate-900 border border-slate-800 rounded-lg px-2.5 py-1.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-[#12161f] border border-[#212734] rounded-md px-2.5 py-1.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-emerald-500"
                   />
                 </div>
               </div>
@@ -459,7 +459,7 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
 
           {/* TAB 2: SPEED & FRAMERATE STRETCH */}
           {activeTab === 'speed' && (
-            <div className="space-y-3.5 bg-slate-950 p-3.5 rounded-xl border border-slate-800">
+            <div className="space-y-3.5 bg-[#07090e] p-3.5 rounded-md border border-[#212734]">
               <p className="text-xs text-slate-400">
                 ရုပ်ရှင်တလျှောက် စာတန်းထိုးက အချိန်ကြာလာသည်နှင့်အမျှ တဖြည်းဖြည်း မညီတော့ဘဲ အသံထက်
                 စော သို့မဟုတ် နောက်ကျသွားပါက FPS Framerate Speed Ratio ပြင်ပေးပါ:
@@ -469,10 +469,10 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
               <div className="grid grid-cols-2 gap-2">
                 <button
                   onClick={() => setSpeedRatio(25.0 / 23.976)}
-                  className={`p-2 rounded-lg border text-left transition text-xs ${
+                  className={`p-2 rounded-md border text-left transition text-xs ${
                     Math.abs(speedRatio - 25.0 / 23.976) < 0.001
-                      ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold'
-                      : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
+                      ? 'bg-emerald-500/15 border-emerald-500/60 text-emerald-300 font-bold'
+                      : 'bg-[#12161f] border-[#212734] text-slate-300 hover:bg-[#1a202c]'
                   }`}
                 >
                   <div className="font-semibold">23.976 FPS ➔ 25 FPS</div>
@@ -481,10 +481,10 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
 
                 <button
                   onClick={() => setSpeedRatio(23.976 / 25.0)}
-                  className={`p-2 rounded-lg border text-left transition text-xs ${
+                  className={`p-2 rounded-md border text-left transition text-xs ${
                     Math.abs(speedRatio - 23.976 / 25.0) < 0.001
-                      ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold'
-                      : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
+                      ? 'bg-emerald-500/15 border-emerald-500/60 text-emerald-300 font-bold'
+                      : 'bg-[#12161f] border-[#212734] text-slate-300 hover:bg-[#1a202c]'
                   }`}
                 >
                   <div className="font-semibold">25 FPS ➔ 23.976 FPS</div>
@@ -493,10 +493,10 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
 
                 <button
                   onClick={() => setSpeedRatio(25.0 / 24.0)}
-                  className={`p-2 rounded-lg border text-left transition text-xs ${
+                  className={`p-2 rounded-md border text-left transition text-xs ${
                     Math.abs(speedRatio - 25.0 / 24.0) < 0.001
-                      ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold'
-                      : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
+                      ? 'bg-emerald-500/15 border-emerald-500/60 text-emerald-300 font-bold'
+                      : 'bg-[#12161f] border-[#212734] text-slate-300 hover:bg-[#1a202c]'
                   }`}
                 >
                   <div className="font-semibold">24 FPS ➔ 25 FPS</div>
@@ -505,10 +505,10 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
 
                 <button
                   onClick={() => setSpeedRatio(1.0)}
-                  className={`p-2 rounded-lg border text-left transition text-xs ${
+                  className={`p-2 rounded-md border text-left transition text-xs ${
                     speedRatio === 1.0
-                      ? 'bg-emerald-500/20 border-emerald-500 text-emerald-300 font-bold'
-                      : 'bg-slate-900 border-slate-800 text-slate-300 hover:bg-slate-800'
+                      ? 'bg-emerald-500/15 border-emerald-500/60 text-emerald-300 font-bold'
+                      : 'bg-[#12161f] border-[#212734] text-slate-300 hover:bg-[#1a202c]'
                   }`}
                 >
                   <div className="font-semibold">Normal 1.000x</div>
@@ -539,8 +539,8 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
         </div>
 
         {/* 3. Realtime Live Comparison Preview */}
-        <div className="bg-slate-950 border border-slate-800 rounded-xl p-3.5 space-y-2">
-          <div className="flex items-center justify-between text-xs border-b border-slate-800 pb-2">
+        <div className="bg-[#07090e] border border-[#212734] rounded-md p-3.5 space-y-2">
+          <div className="flex items-center justify-between text-xs border-b border-[#212734] pb-2">
             <span className="font-bold text-slate-300 flex items-center space-x-1.5">
               <Zap className="w-3.5 h-3.5 text-amber-400" />
               <span>စမ်းသပ် ကြည့်ရှုမှု (Live Preview):</span>
@@ -559,10 +559,10 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
               {samplePairs.map(({ orig, updated }) => (
                 <div
                   key={orig.id}
-                  className="bg-slate-900 border border-slate-800/80 rounded-lg p-2 text-xs font-mono flex flex-col sm:flex-row sm:items-center justify-between gap-1"
+                  className="bg-[#12161f] border border-[#212734] rounded p-2 text-xs font-mono flex flex-col sm:flex-row sm:items-center justify-between gap-1"
                 >
                   <div className="flex items-center space-x-2">
-                    <span className="text-[10px] bg-slate-800 text-slate-400 px-1.5 py-0.5 rounded font-bold">
+                    <span className="text-[10px] bg-[#07090e] text-slate-400 px-1.5 py-0.5 rounded border border-[#212734] font-bold">
                       #{orig.id}
                     </span>
                     <span className="text-slate-400 line-through text-[11px]">
@@ -585,13 +585,13 @@ export const TimeOffsetModal: React.FC<TimeOffsetModalProps> = ({
         <div className="flex justify-end space-x-3 pt-1">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold transition"
+            className="px-4 py-2 rounded-md bg-[#12161f] hover:bg-[#1a202c] border border-[#212734] text-slate-300 text-xs font-semibold transition"
           >
             မလုပ်တော့ပါ
           </button>
           <button
             onClick={handleApply}
-            className="px-5 py-2 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition flex items-center space-x-1.5 shadow-md shadow-emerald-500/20"
+            className="px-5 py-2 rounded-md bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition flex items-center space-x-1.5 shadow-sm"
           >
             <Check className="w-4 h-4" />
             <span>ချိန်ညှိချက် အတည်ပြုမည်</span>

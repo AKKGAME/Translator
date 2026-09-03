@@ -21,6 +21,7 @@ const SAVED_SUBS_DIR = path.join(DATA_DIR, 'saved_subtitles');
 const DONATION_CONFIG_FILE = path.join(DATA_DIR, 'donation_config.json');
 const ADMIN_CONFIG_FILE = path.join(DATA_DIR, 'admin_config.json');
 const TELEGRAM_CONFIG_FILE = path.join(DATA_DIR, 'telegram_config.json');
+const USAGE_CONFIG_FILE = path.join(DATA_DIR, 'usage_config.json');
 const SAVED_SUBS_MANIFEST_FILE = path.join(DATA_DIR, 'saved_subtitles_manifest.json');
 
 try {
@@ -54,11 +55,57 @@ const DEFAULT_TELEGRAM = {
   sendOnDownload: true,
 };
 
+const DEFAULT_USAGE = {
+  freeTierDailyLimit: 50, // 50 lines / day for free users
+  requireAccessKey: false,
+  allowCustomApiKey: true,
+  adminDefaultGeminiKey: '',
+  announcementNotice: '',
+  contactTelegram: '@AnimeGabar',
+  loadBalancingStrategy: 'round_robin', // 'round_robin' | 'least_used' | 'random'
+  geminiKeyPool: process.env.GEMINI_API_KEY
+    ? [
+        {
+          id: 'server-env-key-1',
+          key: process.env.GEMINI_API_KEY,
+          label: 'Primary Server Gemini Key (ENV)',
+          status: 'active',
+          cooldownUntil: null,
+          successCount: 0,
+          errorCount: 0,
+          lastUsedAt: null,
+          lastErrorMsg: null,
+          createdAt: new Date().toISOString(),
+        },
+      ]
+    : [],
+  accessKeys: [
+    {
+      id: 'demo-vip-1',
+      code: 'AG-VIP-PREMIUM',
+      label: 'VIP Unlimited Demo Key',
+      maxLines: 0,
+      usedLines: 0,
+      expiresAt: null,
+      createdAt: new Date().toISOString(),
+      status: 'active',
+      note: 'စနစ်စတင်ချိန် အစမ်းသုံးနိုင်သော VIP Key',
+    },
+  ],
+};
+
 // In-memory fallbacks for serverless stateless execution
 let inMemoryDonation = { ...DEFAULT_DONATION };
 let inMemoryTelegram = { ...DEFAULT_TELEGRAM };
 let inMemoryAdmin = { ...DEFAULT_ADMIN };
+let inMemoryUsage = { ...DEFAULT_USAGE };
 let inMemoryManifest: any[] = [];
+let poolRotationIndex = 0;
+
+function maskApiKey(key: string): string {
+  if (!key || key.length < 8) return '****';
+  return key.substring(0, 8) + '...' + key.substring(key.length - 4);
+}
 
 function getDonationConfig() {
   try {
@@ -121,6 +168,75 @@ function saveAdminConfig(config: any) {
   } catch (err) {
     console.warn('Could not write admin config to disk:', err);
   }
+}
+
+function getUsageConfig() {
+  try {
+    if (fs.existsSync(USAGE_CONFIG_FILE)) {
+      const data = fs.readFileSync(USAGE_CONFIG_FILE, 'utf-8');
+      const parsed = JSON.parse(data);
+      const merged = { ...DEFAULT_USAGE, ...parsed };
+      if (!Array.isArray(merged.geminiKeyPool)) {
+        merged.geminiKeyPool = DEFAULT_USAGE.geminiKeyPool || [];
+      }
+      return merged;
+    }
+  } catch (err) {
+    console.error('Error reading usage_config.json:', err);
+  }
+  return inMemoryUsage;
+}
+
+function saveUsageConfig(config: any) {
+  inMemoryUsage = { ...DEFAULT_USAGE, ...config };
+  try {
+    fs.writeFileSync(USAGE_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+  } catch (err) {
+    console.warn('Could not write usage config to disk:', err);
+  }
+}
+
+// Get all healthy candidate keys from pool with auto cooldown clearance & load balancing
+function getHealthyKeyCandidates(config: any): any[] {
+  const pool = config.geminiKeyPool || [];
+  const now = Date.now();
+  let updated = false;
+
+  for (const k of pool) {
+    if (k.status === 'cooldown' && k.cooldownUntil && now >= k.cooldownUntil) {
+      k.status = 'active';
+      k.cooldownUntil = null;
+      k.lastErrorMsg = 'Cooldown finished (Restored to Active)';
+      updated = true;
+    }
+  }
+
+  if (updated) {
+    saveUsageConfig(config);
+  }
+
+  const healthy = pool.filter(
+    (k: any) => k.status === 'active' && k.key && typeof k.key === 'string' && k.key.trim().length > 10
+  );
+
+  // If strategy is least_used, sort by successCount ascending
+  if (config.loadBalancingStrategy === 'least_used') {
+    return [...healthy].sort((a, b) => (a.successCount || 0) - (b.successCount || 0));
+  }
+
+  // If strategy is random, shuffle healthy
+  if (config.loadBalancingStrategy === 'random' && healthy.length > 1) {
+    return [...healthy].sort(() => Math.random() - 0.5);
+  }
+
+  // Default round_robin: rotate starting from poolRotationIndex
+  if (healthy.length > 1) {
+    const startIdx = poolRotationIndex % healthy.length;
+    poolRotationIndex = (poolRotationIndex + 1) % healthy.length;
+    return [...healthy.slice(startIdx), ...healthy.slice(0, startIdx)];
+  }
+
+  return healthy;
 }
 
 function getSavedSubsManifest(): any[] {
@@ -442,6 +558,592 @@ app.post('/api/admin/update-password', (req, res) => {
   res.json({ success: true, message: 'Admin စကားဝှက် ပြောင်းလဲပြီးပါပြီ' });
 });
 
+// Public Usage Limits & System Status
+app.get('/api/usage-status', (req, res) => {
+  const config = getUsageConfig();
+  res.json({
+    freeTierDailyLimit: config.freeTierDailyLimit ?? 50,
+    requireAccessKey: Boolean(config.requireAccessKey),
+    allowCustomApiKey: config.allowCustomApiKey !== false,
+    hasAdminKey: Boolean(config.adminDefaultGeminiKey || process.env.GEMINI_API_KEY),
+    announcementNotice: config.announcementNotice || '',
+  });
+});
+
+// Public Verify Access Key Endpoint
+app.post('/api/verify-access-key', (req, res) => {
+  const { accessCode } = req.body;
+  const normalized = (accessCode && typeof accessCode === 'string') ? accessCode.trim().toUpperCase() : '';
+  if (!normalized) {
+    return res.status(400).json({ valid: false, error: 'Access Key ထည့်သွင်းပေးပါ' });
+  }
+
+  const config = getUsageConfig();
+  const found = config.accessKeys?.find((k: any) => k.code?.trim().toUpperCase() === normalized);
+
+  if (!found) {
+    return res.status(404).json({ valid: false, error: 'ထည့်သွင်းထားသော Access Key မတွေ့ရှိပါ သို့မဟုတ် မမှန်ကန်ပါ' });
+  }
+
+  if (found.status === 'revoked') {
+    return res.status(403).json({ valid: false, error: 'ဤ Access Key ကို Admin မှ ပယ်ဖျက် (Revoke) ထားပါသည်' });
+  }
+
+  if (found.expiresAt) {
+    const expDate = new Date(found.expiresAt).getTime();
+    if (Date.now() > expDate) {
+      return res.status(403).json({ valid: false, error: 'ဤ Access Key သည် သက်တမ်းကုန်ဆုံးသွားပါပြီ' });
+    }
+  }
+
+  if (found.maxLines > 0 && found.usedLines >= found.maxLines) {
+    return res.status(403).json({
+      valid: false,
+      error: `ဤ Key ၏ သတ်မှတ်စာကြောင်းရေ (${found.maxLines.toLocaleString()} ကြောင်း) အားလုံး ကုန်ဆုံးသွားပါပြီ`,
+    });
+  }
+
+  const remaining = found.maxLines > 0 ? Math.max(0, found.maxLines - found.usedLines) : null;
+
+  res.json({
+    valid: true,
+    message: 'Access Key မှန်ကန်ပါသည်',
+    key: {
+      code: found.code,
+      label: found.label,
+      maxLines: found.maxLines,
+      usedLines: found.usedLines,
+      remainingLines: remaining,
+      expiresAt: found.expiresAt,
+      isUnlimited: found.maxLines === 0,
+    },
+  });
+});
+
+// Admin Usage & Access Keys APIs
+app.get('/api/admin/usage-config', (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  res.json(getUsageConfig());
+});
+
+app.post('/api/admin/update-usage-config', (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  const { usageConfig } = req.body;
+  if (!usageConfig) {
+    return res.status(400).json({ error: 'usageConfig is required' });
+  }
+  const current = getUsageConfig();
+  const updated = {
+    ...current,
+    ...usageConfig,
+    accessKeys: usageConfig.accessKeys || current.accessKeys || [],
+  };
+  saveUsageConfig(updated);
+  res.json({ success: true, usageConfig: updated });
+});
+
+app.post('/api/admin/access-keys/create', (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  const { code, label, maxLines, expiresAt, note } = req.body;
+  if (!code || typeof code !== 'string' || !code.trim()) {
+    return res.status(400).json({ error: 'Access Key Code ထည့်သွင်းပေးပါ' });
+  }
+
+  const config = getUsageConfig();
+  const normalized = code.trim().toUpperCase();
+
+  if (config.accessKeys?.some((k: any) => k.code?.trim().toUpperCase() === normalized)) {
+    return res.status(400).json({ error: `Key Code "${normalized}" ရှိနှင့်ပြီးဖြစ်ပါသည်` });
+  }
+
+  const newKey = {
+    id: 'key_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6),
+    code: normalized,
+    label: label?.trim() || `User: ${normalized}`,
+    maxLines: typeof maxLines === 'number' ? maxLines : 5000,
+    usedLines: 0,
+    expiresAt: expiresAt || null,
+    createdAt: new Date().toISOString(),
+    status: 'active',
+    note: note?.trim() || '',
+  };
+
+  config.accessKeys = [newKey, ...(config.accessKeys || [])];
+  saveUsageConfig(config);
+
+  res.json({ success: true, key: newKey, accessKeys: config.accessKeys });
+});
+
+app.post('/api/admin/access-keys/toggle', (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  const { keyId } = req.body;
+  const config = getUsageConfig();
+  let found = false;
+
+  config.accessKeys = (config.accessKeys || []).map((k: any) => {
+    if (k.id === keyId || k.code?.trim().toUpperCase() === (keyId || '').trim().toUpperCase()) {
+      found = true;
+      const nextStatus = k.status === 'active' ? 'revoked' : 'active';
+      return { ...k, status: nextStatus };
+    }
+    return k;
+  });
+
+  if (!found) {
+    return res.status(404).json({ error: 'Key not found' });
+  }
+
+  saveUsageConfig(config);
+  res.json({ success: true, accessKeys: config.accessKeys });
+});
+
+app.post('/api/admin/access-keys/reset-usage', (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  const { keyId } = req.body;
+  const config = getUsageConfig();
+  let found = false;
+
+  config.accessKeys = (config.accessKeys || []).map((k: any) => {
+    if (k.id === keyId || k.code?.trim().toUpperCase() === (keyId || '').trim().toUpperCase()) {
+      found = true;
+      return { ...k, usedLines: 0 };
+    }
+    return k;
+  });
+
+  if (!found) {
+    return res.status(404).json({ error: 'Key not found' });
+  }
+
+  saveUsageConfig(config);
+  res.json({ success: true, accessKeys: config.accessKeys });
+});
+
+app.post('/api/admin/access-keys/delete', (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  const { keyId } = req.body;
+  const config = getUsageConfig();
+  const prevLen = config.accessKeys?.length || 0;
+
+  config.accessKeys = (config.accessKeys || []).filter(
+    (k: any) => k.id !== keyId && k.code?.trim().toUpperCase() !== (keyId || '').trim().toUpperCase()
+  );
+
+  if (config.accessKeys.length === prevLen) {
+    return res.status(404).json({ error: 'Key not found' });
+  }
+
+  saveUsageConfig(config);
+  res.json({ success: true, accessKeys: config.accessKeys });
+});
+
+// Batch delete VIP access keys (selected, expired/used-up, or all)
+app.post('/api/admin/access-keys/delete-batch', (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  const { keyIds, expiredOnly, all } = req.body;
+  const config = getUsageConfig();
+  const currentKeys = config.accessKeys || [];
+  const prevCount = currentKeys.length;
+
+  if (all) {
+    config.accessKeys = [];
+  } else if (expiredOnly) {
+    const now = Date.now();
+    config.accessKeys = currentKeys.filter((k: any) => {
+      const isExpired = k.expiresAt && new Date(k.expiresAt).getTime() < now;
+      const isExhausted = k.maxLines > 0 && (k.usedLines || 0) >= k.maxLines;
+      return !isExpired && !isExhausted;
+    });
+  } else if (Array.isArray(keyIds) && keyIds.length > 0) {
+    const idSet = new Set(keyIds.map((id: string) => String(id).trim().toUpperCase()));
+    config.accessKeys = currentKeys.filter((k: any) => {
+      const idMatch = idSet.has(String(k.id).toUpperCase());
+      const codeMatch = k.code && idSet.has(String(k.code).trim().toUpperCase());
+      return !idMatch && !codeMatch;
+    });
+  } else {
+    return res.status(400).json({ error: 'ဖျက်မည့် Key များကို ရွေးချယ်ပေးပါ' });
+  }
+
+  const deletedCount = prevCount - (config.accessKeys?.length || 0);
+  saveUsageConfig(config);
+  res.json({
+    success: true,
+    deletedCount,
+    accessKeys: config.accessKeys,
+    message: `${deletedCount} ခုသော VIP Key(s) ကို အောင်မြင်စွာ ဖျက်ပစ်ပြီးပါပြီ`,
+  });
+});
+
+// Admin Gemini Key Pool APIs (Multi-Key Management)
+app.get('/api/admin/gemini-keys', (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  const config = getUsageConfig();
+  const pool = config.geminiKeyPool || [];
+  const now = Date.now();
+
+  const maskedKeys = pool.map((k: any) => ({
+    id: k.id,
+    label: k.label || 'Gemini Key',
+    maskedKey: maskApiKey(k.key),
+    status: k.status,
+    cooldownUntil: k.cooldownUntil,
+    cooldownRemainingSeconds: k.cooldownUntil && k.cooldownUntil > now ? Math.ceil((k.cooldownUntil - now) / 1000) : 0,
+    successCount: k.successCount || 0,
+    errorCount: k.errorCount || 0,
+    lastUsedAt: k.lastUsedAt || null,
+    lastErrorMsg: k.lastErrorMsg || null,
+    createdAt: k.createdAt || new Date().toISOString(),
+  }));
+
+  const activeCount = pool.filter((k: any) => k.status === 'active').length;
+  const cooldownCount = pool.filter((k: any) => k.status === 'cooldown' && k.cooldownUntil && k.cooldownUntil > now).length;
+  const errorCount = pool.filter((k: any) => k.status === 'error' || k.status === 'disabled').length;
+
+  res.json({
+    keys: maskedKeys,
+    totalKeys: pool.length,
+    activeCount,
+    cooldownCount,
+    errorCount,
+    strategy: config.loadBalancingStrategy || 'round_robin',
+  });
+});
+
+// Add single or bulk API keys
+app.post('/api/admin/gemini-keys/add', (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  const { rawKeys, labelPrefix } = req.body;
+  if (!rawKeys || typeof rawKeys !== 'string' || !rawKeys.trim()) {
+    return res.status(400).json({ error: 'Gemini API Key(s) ထည့်သွင်းပေးပါ' });
+  }
+
+  const config = getUsageConfig();
+  if (!Array.isArray(config.geminiKeyPool)) {
+    config.geminiKeyPool = [];
+  }
+
+  // Parse lines or comma separated tokens
+  const lines = rawKeys.split(/[\n\r,;\t]+/);
+  const newItems: any[] = [];
+  let skippedDuplicates = 0;
+
+  for (let idx = 0; idx < lines.length; idx++) {
+    const raw = lines[idx].trim();
+    if (!raw || raw.length < 15) continue;
+
+    // Check if key already exists in pool
+    const existing = config.geminiKeyPool.find((k: any) => k.key === raw);
+    if (existing) {
+      skippedDuplicates++;
+      continue;
+    }
+
+    const keyIndex = config.geminiKeyPool.length + newItems.length + 1;
+    const label = labelPrefix ? `${labelPrefix} #${keyIndex}` : `Gemini Pool Key #${keyIndex}`;
+
+    const newItem = {
+      id: 'gkey_' + Date.now().toString(36) + '_' + Math.random().toString(36).substring(2, 6),
+      key: raw,
+      label,
+      status: 'active',
+      cooldownUntil: null,
+      successCount: 0,
+      errorCount: 0,
+      lastUsedAt: null,
+      lastErrorMsg: null,
+      createdAt: new Date().toISOString(),
+    };
+
+    newItems.push(newItem);
+  }
+
+  if (newItems.length === 0 && skippedDuplicates > 0) {
+    return res.status(400).json({ error: 'ထည့်သွင်းသော Key များ အားလုံး Pool ထဲတွင် ရှိပြီးသား ဖြစ်နေပါသည်' });
+  }
+
+  if (newItems.length === 0) {
+    return res.status(400).json({ error: 'မှန်ကန်သော Gemini API Key မတွေ့ရှိပါ' });
+  }
+
+  config.geminiKeyPool.push(...newItems);
+  saveUsageConfig(config);
+
+  res.json({
+    success: true,
+    addedCount: newItems.length,
+    skippedDuplicates,
+    message: `${newItems.length} Key(s) ကို API Key Pool သို့ အောင်မြင်စွာ ထည့်သွင်းပြီးပါပြီ`,
+  });
+});
+
+// Toggle key enable/disabled or reset cooldown
+app.post('/api/admin/gemini-keys/toggle', (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  const { keyId } = req.body;
+  const config = getUsageConfig();
+  const pool = config.geminiKeyPool || [];
+  let found = false;
+
+  config.geminiKeyPool = pool.map((k: any) => {
+    if (k.id === keyId) {
+      found = true;
+      let nextStatus = k.status === 'active' ? 'disabled' : 'active';
+      return { ...k, status: nextStatus, cooldownUntil: null, lastErrorMsg: null };
+    }
+    return k;
+  });
+
+  if (!found) {
+    return res.status(404).json({ error: 'Key not found' });
+  }
+
+  saveUsageConfig(config);
+  res.json({ success: true, message: 'Key status updated' });
+});
+
+// Delete a key from pool
+app.post('/api/admin/gemini-keys/delete', (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  const { keyId } = req.body;
+  const config = getUsageConfig();
+  const pool = config.geminiKeyPool || [];
+  const prevLen = pool.length;
+
+  config.geminiKeyPool = pool.filter((k: any) => k.id !== keyId);
+
+  if (config.geminiKeyPool.length === prevLen) {
+    return res.status(404).json({ error: 'Key not found' });
+  }
+
+  saveUsageConfig(config);
+  res.json({ success: true, message: 'Key removed from pool' });
+});
+
+// Batch delete Gemini Key Pool items (selected keys, error keys, or all keys)
+app.post('/api/admin/gemini-keys/delete-batch', (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  const { keyIds, onlyErrors, onlyDisabled, all } = req.body;
+  const config = getUsageConfig();
+  const pool = config.geminiKeyPool || [];
+  const prevCount = pool.length;
+
+  if (all) {
+    config.geminiKeyPool = [];
+  } else if (onlyErrors) {
+    config.geminiKeyPool = pool.filter((k: any) => k.status !== 'error' && !k.lastErrorMsg?.includes('Invalid'));
+  } else if (onlyDisabled) {
+    config.geminiKeyPool = pool.filter((k: any) => k.status !== 'disabled');
+  } else if (Array.isArray(keyIds) && keyIds.length > 0) {
+    const idSet = new Set(keyIds.map((id: string) => String(id).trim()));
+    config.geminiKeyPool = pool.filter((k: any) => !idSet.has(String(k.id)));
+  } else {
+    return res.status(400).json({ error: 'ဖျက်မည့် Key များကို ရွေးချယ်ပေးပါ' });
+  }
+
+  const deletedCount = prevCount - (config.geminiKeyPool?.length || 0);
+  saveUsageConfig(config);
+  res.json({
+    success: true,
+    deletedCount,
+    remainingCount: config.geminiKeyPool?.length || 0,
+    message: `${deletedCount} ခုသော Gemini Key(s) ကို Key Pool မှ အောင်မြင်စွာ ဖျက်ပစ်ပြီးပါပြီ`,
+  });
+});
+
+// Reset key success/error counters
+app.post('/api/admin/gemini-keys/reset-stats', (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  const { keyId } = req.body;
+  const config = getUsageConfig();
+  const pool = config.geminiKeyPool || [];
+
+  config.geminiKeyPool = pool.map((k: any) => {
+    if (!keyId || k.id === keyId) {
+      return {
+        ...k,
+        successCount: 0,
+        errorCount: 0,
+        status: k.status === 'error' ? 'active' : k.status,
+        cooldownUntil: null,
+        lastErrorMsg: null,
+      };
+    }
+    return k;
+  });
+
+  saveUsageConfig(config);
+  res.json({ success: true, message: 'Stats reset successfully' });
+});
+
+// Test single key in pool
+app.post('/api/admin/gemini-keys/test', async (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  const { keyId } = req.body;
+  const config = getUsageConfig();
+  const pool = config.geminiKeyPool || [];
+  const target = pool.find((k: any) => k.id === keyId);
+
+  if (!target || !target.key) {
+    return res.status(404).json({ error: 'Key not found in pool' });
+  }
+
+  try {
+    const ai = new GoogleGenAI({ apiKey: target.key.trim() });
+    const testModels = ['gemini-2.5-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
+    let verifiedModel = '';
+
+    for (const m of testModels) {
+      try {
+        const result = await ai.models.generateContent({
+          model: m,
+          contents: 'Ping test. Reply: OK',
+        });
+        if (result.text) {
+          verifiedModel = m;
+          break;
+        }
+      } catch (mErr) {
+        // try next
+      }
+    }
+
+    if (verifiedModel) {
+      target.status = 'active';
+      target.cooldownUntil = null;
+      target.lastErrorMsg = null;
+      target.lastUsedAt = new Date().toISOString();
+      saveUsageConfig(config);
+      return res.json({ valid: true, model: verifiedModel, message: `Key is Active & Valid (${verifiedModel})` });
+    }
+
+    throw new Error('Gemini API did not respond');
+  } catch (err: any) {
+    target.status = 'error';
+    target.lastErrorMsg = err.message || 'API Validation Error';
+    saveUsageConfig(config);
+    return res.status(400).json({ valid: false, error: target.lastErrorMsg });
+  }
+});
+
+// Test all keys in pool
+app.post('/api/admin/gemini-keys/test-all', async (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  const config = getUsageConfig();
+  const pool = config.geminiKeyPool || [];
+
+  if (pool.length === 0) {
+    return res.json({ total: 0, valid: 0, invalid: 0, results: [] });
+  }
+
+  let validCount = 0;
+  let invalidCount = 0;
+  const results: any[] = [];
+
+  for (const item of pool) {
+    if (item.status === 'disabled') {
+      results.push({ id: item.id, valid: false, status: 'disabled', error: 'Disabled by admin' });
+      continue;
+    }
+
+    try {
+      const ai = new GoogleGenAI({ apiKey: item.key.trim() });
+      const testModels = ['gemini-2.5-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
+      let ok = false;
+      let okModel = '';
+
+      for (const m of testModels) {
+        try {
+          const resp = await ai.models.generateContent({
+            model: m,
+            contents: 'Test OK',
+          });
+          if (resp.text) {
+            ok = true;
+            okModel = m;
+            break;
+          }
+        } catch (e) {
+          // next
+        }
+      }
+
+      if (ok) {
+        item.status = 'active';
+        item.cooldownUntil = null;
+        item.lastErrorMsg = null;
+        validCount++;
+        results.push({ id: item.id, valid: true, model: okModel });
+      } else {
+        item.status = 'error';
+        item.lastErrorMsg = 'Failed response';
+        invalidCount++;
+        results.push({ id: item.id, valid: false, error: 'No response' });
+      }
+    } catch (e: any) {
+      item.status = 'error';
+      item.lastErrorMsg = e.message || 'Validation failed';
+      invalidCount++;
+      results.push({ id: item.id, valid: false, error: item.lastErrorMsg });
+    }
+  }
+
+  saveUsageConfig(config);
+
+  res.json({
+    total: pool.length,
+    valid: validCount,
+    invalid: invalidCount,
+    results,
+    message: `Test Complete: ${validCount} Active, ${invalidCount} Error`,
+  });
+});
+
+// Update load balancing strategy
+app.post('/api/admin/gemini-keys/update-strategy', (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  const { strategy } = req.body;
+  if (!['round_robin', 'least_used', 'random'].includes(strategy)) {
+    return res.status(400).json({ error: 'Invalid strategy' });
+  }
+  const config = getUsageConfig();
+  config.loadBalancingStrategy = strategy;
+  saveUsageConfig(config);
+  res.json({ success: true, strategy });
+});
+
 // Public Subtitle File Saving API (Called when user translates/exports subtitle)
 app.post('/api/save-subtitle-file', async (req, res) => {
   try {
@@ -673,9 +1375,67 @@ app.post('/api/translate-subtitles', async (req, res) => {
   try {
     const { items, settings, apiKey: reqApiKey } = req.body;
     const customApiKey = reqApiKey || (req.headers['x-api-key'] as string);
+    const accessCode = (settings?.accessCode || (req.headers['x-access-code'] as string) || '').trim().toUpperCase();
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Items array is required' });
+    }
+
+    const usageConfig = getUsageConfig();
+    let effectiveApiKey = (customApiKey && customApiKey.trim()) || '';
+    let matchedAccessKey: any = null;
+
+    // 1. If user didn't supply their own API Key, check access code & system rules
+    if (!effectiveApiKey) {
+      if (accessCode) {
+        matchedAccessKey = usageConfig.accessKeys?.find(
+          (k: any) => k.code?.trim().toUpperCase() === accessCode
+        );
+
+        if (!matchedAccessKey) {
+          return res.status(403).json({
+            error: 'ထည့်သွင်းထားသော VIP Access Key မတွေ့ရှိပါ သို့မဟုတ် မမှန်ကန်ပါ',
+            needAccessKey: true,
+          });
+        }
+
+        if (matchedAccessKey.status === 'revoked') {
+          return res.status(403).json({
+            error: 'ဤ Access Key ကို Admin မှ ပယ်ဖျက် (Revoke) ထားပါသည်',
+            needAccessKey: true,
+          });
+        }
+
+        if (matchedAccessKey.expiresAt) {
+          const expDate = new Date(matchedAccessKey.expiresAt).getTime();
+          if (Date.now() > expDate) {
+            return res.status(403).json({
+              error: 'ဤ VIP Access Key သည် သက်တမ်းကုန်ဆုံးသွားပါပြီ',
+              needAccessKey: true,
+            });
+          }
+        }
+
+        if (matchedAccessKey.maxLines > 0 && matchedAccessKey.usedLines >= matchedAccessKey.maxLines) {
+          return res.status(403).json({
+            error: `ဤ VIP Key ၏ စာကြောင်းရေ (${matchedAccessKey.maxLines.toLocaleString()} ကြောင်း) အားလုံး ကုန်ဆုံးသွားပါပြီ`,
+            needAccessKey: true,
+          });
+        }
+
+        // Key is valid -> use admin provided key or env key
+        effectiveApiKey = (usageConfig.adminDefaultGeminiKey && usageConfig.adminDefaultGeminiKey.trim()) || process.env.GEMINI_API_KEY || '';
+      } else {
+        // Free user without VIP key
+        if (usageConfig.requireAccessKey) {
+          return res.status(403).json({
+            error: 'စနစ်ကို အသုံးပြုရန် VIP Access Key သို့မဟုတ် မိမိ၏ Gemini API Key လိုအပ်ပါသည်',
+            needAccessKey: true,
+          });
+        }
+
+        effectiveApiKey = (usageConfig.adminDefaultGeminiKey && usageConfig.adminDefaultGeminiKey.trim()) || process.env.GEMINI_API_KEY || '';
+      }
     }
 
     const style = settings?.style || 'conversational';
@@ -791,13 +1551,11 @@ ${customPromptNote ? `Additional User Guidelines: ${customPromptNote}` : ''}
     const promptText = `Please translate the following subtitle items into Myanmar (Burmese):
 ${JSON.stringify(items.map((i: any) => ({ id: i.id, text: i.text })))}`;
 
-    const ai = getGeminiClient(customApiKey);
-
     let responseText = '';
     let success = false;
     let lastError: any = null;
 
-    // Supported model fallback order for Free and Paid Gemini keys
+    // Supported model fallback order
     const modelsToTry = [
       'gemini-2.5-flash',
       'gemini-3.7-flash',
@@ -806,15 +1564,45 @@ ${JSON.stringify(items.map((i: any) => ({ id: i.id, text: i.text })))}`;
       'gemini-3.1-flash-lite',
     ];
 
-    let pass = 0;
-    const maxPasses = 3;
+    // Determine Key Candidates
+    let keyCandidates: any[] = [];
+    if (effectiveApiKey && customApiKey) {
+      // User supplied their own private key
+      keyCandidates = [{ id: 'user-key', key: effectiveApiKey, label: 'Custom User Key' }];
+    } else {
+      // Use Admin Multi-Key Pool with smart rotation & auto cooldown clearance
+      const healthyPoolKeys = getHealthyKeyCandidates(usageConfig);
+      if (healthyPoolKeys.length > 0) {
+        keyCandidates = healthyPoolKeys;
+      } else if (usageConfig.adminDefaultGeminiKey && usageConfig.adminDefaultGeminiKey.trim()) {
+        keyCandidates = [{ id: 'admin-default', key: usageConfig.adminDefaultGeminiKey.trim(), label: 'Admin Default Key' }];
+      } else if (process.env.GEMINI_API_KEY) {
+        keyCandidates = [{ id: 'env-default', key: process.env.GEMINI_API_KEY, label: 'Server ENV Key' }];
+      }
+    }
 
-    while (pass < maxPasses && !success) {
-      pass++;
+    if (keyCandidates.length === 0) {
+      return res.status(503).json({
+        error: 'Gemini API Key မရှိသေးပါ သို့မဟုတ် Key Pool ရှိ Key အားလုံး Cooldown ဖြစ်နေပါသည် (၁ မိနစ်စောင့်ပါ သို့မဟုတ် ကိုယ်ပိုင် Key ထည့်ပါ)',
+        isRateLimit: true,
+      });
+    }
+
+    // Try candidates in pool (Auto Failover)
+    for (const candidate of keyCandidates) {
+      if (success) break;
+
+      let candidateAi: GoogleGenAI;
+      try {
+        candidateAi = getGeminiClient(candidate.key);
+      } catch (e: any) {
+        continue;
+      }
+
       for (const modelName of modelsToTry) {
         if (success) break;
         try {
-          const response = await ai.models.generateContent({
+          const response = await candidateAi.models.generateContent({
             model: modelName,
             contents: promptText,
             config: {
@@ -844,6 +1632,18 @@ ${JSON.stringify(items.map((i: any) => ({ id: i.id, text: i.text })))}`;
           responseText = response.text || '{}';
           if (responseText && responseText !== '{}') {
             success = true;
+            // Record success for this pool key
+            if (candidate.id !== 'user-key' && usageConfig.geminiKeyPool) {
+              const matchedInConfig = usageConfig.geminiKeyPool.find((k: any) => k.id === candidate.id);
+              if (matchedInConfig) {
+                matchedInConfig.successCount = (matchedInConfig.successCount || 0) + 1;
+                matchedInConfig.lastUsedAt = new Date().toISOString();
+                matchedInConfig.status = 'active';
+                matchedInConfig.cooldownUntil = null;
+                matchedInConfig.lastErrorMsg = null;
+                saveUsageConfig(usageConfig);
+              }
+            }
             break;
           }
         } catch (err: any) {
@@ -854,18 +1654,34 @@ ${JSON.stringify(items.map((i: any) => ({ id: i.id, text: i.text })))}`;
             (err?.message && (err.message.includes('429') || err.message.includes('quota') || err.message.includes('RESOURCE_EXHAUSTED')));
 
           if (isRateLimit) {
-            console.warn(`[${modelName}] Rate limit / quota hit. Trying next fallback model...`);
-            continue;
+            console.warn(`[${modelName}] [Key ${maskApiKey(candidate.key)}] Rate limit hit.`);
           } else {
-            console.warn(`[${modelName}] Error encountered: ${err?.message || err}. Trying next model...`);
-            continue;
+            console.warn(`[${modelName}] [Key ${maskApiKey(candidate.key)}] Error: ${err?.message || err}`);
           }
         }
       }
 
-      if (!success && pass < maxPasses) {
-        console.warn(`All models rate-limited on pass ${pass}/${maxPasses}. Waiting 2.5s before retry...`);
-        await new Promise((resolve) => setTimeout(resolve, 2500));
+      // If this candidate failed across all models, update its health status in pool
+      if (!success && candidate.id !== 'user-key' && usageConfig.geminiKeyPool) {
+        const matchedInConfig = usageConfig.geminiKeyPool.find((k: any) => k.id === candidate.id);
+        if (matchedInConfig) {
+          matchedInConfig.errorCount = (matchedInConfig.errorCount || 0) + 1;
+          const isRateLimit =
+            lastError?.status === 'RESOURCE_EXHAUSTED' ||
+            lastError?.code === 429 ||
+            (lastError?.message && (lastError.message.includes('429') || lastError.message.includes('quota') || lastError.message.includes('RESOURCE_EXHAUSTED')));
+
+          if (isRateLimit) {
+            matchedInConfig.status = 'cooldown';
+            matchedInConfig.cooldownUntil = Date.now() + 60000; // 1 min cooldown
+            matchedInConfig.lastErrorMsg = `429 Rate Limit (Cooldown 1 min)`;
+          } else if (lastError?.message && (lastError.message.includes('API_KEY_INVALID') || lastError.message.includes('400'))) {
+            matchedInConfig.status = 'error';
+            matchedInConfig.lastErrorMsg = 'Invalid API Key';
+          }
+          saveUsageConfig(usageConfig);
+          console.warn(`[Auto-Failover] Key ${maskApiKey(candidate.key)} in cooldown. Trying next key in pool...`);
+        }
       }
     }
 
@@ -877,7 +1693,7 @@ ${JSON.stringify(items.map((i: any) => ({ id: i.id, text: i.text })))}`;
 
       if (isRateLimit) {
         return res.status(429).json({
-          error: 'Gemini API Rate Limit hit. Retrying automatically...',
+          error: 'Gemini API Rate Limit hit. Retrying automatically across Key Pool...',
           isRateLimit: true,
         });
       }
@@ -900,8 +1716,34 @@ ${JSON.stringify(items.map((i: any) => ({ id: i.id, text: i.text })))}`;
       throw new Error('Gemini API returned invalid JSON structure.');
     }
 
+    // Deduct translated lines from matched access key if applicable
+    let keyUsageInfo: any = null;
+    if (matchedAccessKey) {
+      try {
+        const freshConfig = getUsageConfig();
+        const foundIndex = freshConfig.accessKeys?.findIndex(
+          (k: any) => k.id === matchedAccessKey.id || k.code?.trim().toUpperCase() === matchedAccessKey.code?.trim().toUpperCase()
+        );
+        if (foundIndex !== -1 && freshConfig.accessKeys) {
+          freshConfig.accessKeys[foundIndex].usedLines = (freshConfig.accessKeys[foundIndex].usedLines || 0) + items.length;
+          saveUsageConfig(freshConfig);
+          keyUsageInfo = {
+            code: freshConfig.accessKeys[foundIndex].code,
+            usedLines: freshConfig.accessKeys[foundIndex].usedLines,
+            maxLines: freshConfig.accessKeys[foundIndex].maxLines,
+            remainingLines: freshConfig.accessKeys[foundIndex].maxLines > 0
+              ? Math.max(0, freshConfig.accessKeys[foundIndex].maxLines - freshConfig.accessKeys[foundIndex].usedLines)
+              : null,
+          };
+        }
+      } catch (err) {
+        console.warn('Could not update key usage lines:', err);
+      }
+    }
+
     res.json({
       translations: parsedData.translations || [],
+      keyUsage: keyUsageInfo,
     });
   } catch (error: any) {
     console.error('Error translating subtitles:', error);

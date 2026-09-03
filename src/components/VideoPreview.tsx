@@ -349,9 +349,9 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
   return (
     <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
       {/* Top Header & Keyboard Shortcut Info Bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3 bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm">
+      <div className="flex flex-wrap items-center justify-between gap-3 bg-[#0e1219] border border-[#212734] rounded-lg p-4 shadow-sm">
         <div className="flex items-center space-x-3">
-          <div className="p-2.5 bg-emerald-500/20 text-emerald-400 rounded-xl border border-emerald-500/30">
+          <div className="p-2.5 bg-emerald-500/10 text-emerald-400 rounded-md border border-emerald-500/20">
             <Film className="w-5 h-5" />
           </div>
           <div>
@@ -367,7 +367,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
         <div className="flex items-center space-x-2">
           <button
             onClick={() => setShowKeyboardHelp(!showKeyboardHelp)}
-            className="flex items-center space-x-1.5 px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 text-xs font-semibold rounded-xl border border-slate-700 transition"
+            className="flex items-center space-x-1.5 px-3 py-1.5 bg-[#161c28] hover:bg-[#1e2636] text-slate-300 text-xs font-semibold rounded-md border border-[#262f40] transition"
             title="ကီးဘုတ် ဖြတ်လမ်းနည်းများ ကြည့်မည်"
           >
             <Keyboard className="w-3.5 h-3.5 text-amber-400" />
@@ -377,7 +377,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
           {onTimeShiftClick && (
             <button
               onClick={onTimeShiftClick}
-              className="flex items-center space-x-1.5 px-3 py-1.5 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 text-xs font-bold rounded-xl border border-amber-500/30 transition"
+              className="flex items-center space-x-1.5 px-3 py-1.5 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 text-xs font-bold rounded-md border border-amber-500/30 transition"
             >
               <Clock className="w-3.5 h-3.5" />
               <span>အချိန် အဆိုင်း ချိန်မည်</span>
@@ -388,8 +388,8 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
 
       {/* Keyboard Shortcuts Help Drawer */}
       {showKeyboardHelp && (
-        <div className="bg-slate-900 border border-amber-500/40 rounded-2xl p-4 text-xs text-slate-300 space-y-3 animate-fadeIn">
-          <div className="flex items-center justify-between font-bold text-amber-300 border-b border-slate-800 pb-2">
+        <div className="bg-[#0e1219] border border-amber-500/40 rounded-lg p-4 text-xs text-slate-300 space-y-3">
+          <div className="flex items-center justify-between font-bold text-amber-300 border-b border-[#212734] pb-2">
             <span className="flex items-center space-x-2">
               <Keyboard className="w-4 h-4" />
               <span>အမြန် ကီးဘုတ် ဖြတ်လမ်းများ (Keyboard Shortcuts)</span>
@@ -402,22 +402,22 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
             </button>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-2 text-[11px] font-mono">
-            <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
+            <div className="bg-[#07090e] p-2 rounded border border-[#212734]">
               <span className="text-emerald-400 font-bold">Spacebar:</span> ဖွင့်မည် / ရပ်မည် (Play/Pause)
             </div>
-            <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
+            <div className="bg-[#07090e] p-2 rounded border border-[#212734]">
               <span className="text-emerald-400 font-bold">← / → (Arrows):</span> 3 စက္ကန့် နောက်သို့/ရှေ့သို့
             </div>
-            <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
+            <div className="bg-[#07090e] p-2 rounded border border-[#212734]">
               <span className="text-emerald-400 font-bold">↑ / ↓ (Arrows):</span> ယခင် / နောက် စာကြောင်းသို့ သွားမည်
             </div>
-            <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
+            <div className="bg-[#07090e] p-2 rounded border border-[#212734]">
               <span className="text-emerald-400 font-bold">Ctrl + Enter:</span> စာသား ရေးပြီးပါက နောက်လိုင်းသို့ သွားမည်
             </div>
-            <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
+            <div className="bg-[#07090e] p-2 rounded border border-[#212734]">
               <span className="text-emerald-400 font-bold">Alt + [ :</span> စတင်ချိန်ကို လက်ရှိ ဗီဒီယိုနေရာ သတ်မှတ်မည်
             </div>
-            <div className="bg-slate-950 p-2 rounded-lg border border-slate-800">
+            <div className="bg-[#07090e] p-2 rounded border border-[#212734]">
               <span className="text-emerald-400 font-bold">Alt + ] :</span> ပြီးဆုံးချိန်ကို လက်ရှိ ဗီဒီယိုနေရာ သတ်မှတ်မည်
             </div>
           </div>
@@ -429,7 +429,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
         {/* Left 2 Cols: Video Player & Controls & Live Subtitle Panel */}
         <div className="lg:col-span-2 space-y-4">
           {/* Main Video Box */}
-          <div className="relative bg-black rounded-2xl overflow-hidden shadow-2xl border border-slate-800 aspect-video group">
+          <div className="relative bg-black rounded-lg overflow-hidden shadow-2xl border border-[#212734] aspect-video group">
             <video
               ref={videoRef}
               src={videoConfig.videoUrl}
@@ -443,15 +443,15 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
 
             {/* Video Error Fallback Notice */}
             {hasVideoError && (
-              <div className="absolute inset-0 bg-slate-950/90 flex flex-col items-center justify-center p-6 text-center text-slate-300 space-y-3 z-10">
-                <Film className="w-10 h-10 text-amber-400 animate-bounce" />
+              <div className="absolute inset-0 bg-[#07090e]/95 flex flex-col items-center justify-center p-6 text-center text-slate-300 space-y-3 z-10">
+                <Film className="w-10 h-10 text-amber-400" />
                 <div className="font-bold text-slate-100 text-sm">
                   ဗီဒီယို ဖိုင် ဖွင့်၍ မရပါ သို့မဟုတ် မူရင်း URL တိုက်ရိုက် မရရှိနိုင်ပါ
                 </div>
                 <p className="text-xs text-slate-400 max-w-md">
                   အောက်ပါ "မိမိ ဗီဒီယိုဖိုင် ထည့်သွင်းမည်" ခလုတ်မှ မိမိစက်ထဲရှိ MKV, MP4, WebM စသည့် Video ဖိုင်များကို ရွေးချယ် ထည့်သွင်း ကြည့်ရှုနိုင်ပါသည်။
                 </p>
-                <label className="mt-2 inline-flex items-center space-x-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold px-4 py-2 rounded-xl cursor-pointer text-xs transition shadow-lg">
+                <label className="mt-2 inline-flex items-center space-x-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold px-4 py-2 rounded-md cursor-pointer text-xs transition shadow-lg">
                   <Upload className="w-4 h-4" />
                   <span>မိမိ ဗီဒီယိုဖိုင် (MKV/MP4/WebM) ထည့်သွင်းမည်</span>
                   <input
@@ -480,7 +480,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                     backgroundColor: videoConfig.bgColor,
                     fontSize: `${videoConfig.fontSize}px`,
                   }}
-                  className="px-5 py-2.5 rounded-xl backdrop-blur-md max-w-2xl leading-relaxed shadow-2xl border border-white/10 transition-all transform scale-100"
+                  className="px-5 py-2.5 rounded-md backdrop-blur-md max-w-2xl leading-relaxed shadow-2xl border border-white/10 transition-all transform scale-100"
                 >
                   {/* Myanmar Translated Subtitle */}
                   {(videoConfig.subtitleMode === 'translated' ||
@@ -520,12 +520,12 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
 
           {/* Subtitle Timeline Visual Wave/Track Bar */}
           {durationSec > 0 && items.length > 0 && (
-            <div className="bg-slate-900 border border-slate-800 rounded-xl p-2 shadow-sm space-y-1">
+            <div className="bg-[#0e1219] border border-[#212734] rounded-md p-2 shadow-sm space-y-1">
               <div className="flex items-center justify-between text-[10px] text-slate-400 px-1 font-mono">
                 <span>Timeline Preview ({items.length} Subtitles)</span>
                 <span>{formatSecToTime(currentTimeMs / 1000)}</span>
               </div>
-              <div className="relative h-4 bg-slate-950 rounded-lg overflow-hidden border border-slate-800 flex items-center">
+              <div className="relative h-4 bg-[#07090e] rounded overflow-hidden border border-[#212734] flex items-center">
                 {items.map((it) => {
                   const leftPercent = Math.min(100, Math.max(0, ((it.startMs / 1000) / durationSec) * 100));
                   const widthPercent = Math.min(100 - leftPercent, Math.max(0.5, (((it.endMs - it.startMs) / 1000) / durationSec) * 100));
@@ -557,7 +557,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
           )}
 
           {/* Player Scrubber & Control Bar */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
+          <div className="bg-[#0e1219] border border-[#212734] rounded-lg p-4 shadow-sm space-y-3">
             {/* Timeline Range Scrubber */}
             <div className="space-y-1">
               <div className="relative flex items-center">
@@ -568,7 +568,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                   step={0.1}
                   value={currentTimeMs / 1000}
                   onChange={handleSeek}
-                  className="w-full h-2 bg-slate-950 rounded-lg appearance-none cursor-pointer accent-emerald-500 focus:outline-none border border-slate-800"
+                  className="w-full h-2 bg-[#07090e] rounded appearance-none cursor-pointer accent-emerald-500 focus:outline-none border border-[#212734]"
                 />
               </div>
               <div className="flex items-center justify-between text-[11px] font-mono text-slate-400">
@@ -585,12 +585,12 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
             </div>
 
             {/* Playback Controls & Speed Selector */}
-            <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-slate-800/80">
+            <div className="flex items-center justify-between flex-wrap gap-2 pt-1 border-t border-[#212734]">
               {/* Left: Skip & Play Controls */}
               <div className="flex items-center space-x-1.5 flex-wrap">
                 <button
                   onClick={jumpToPrevSub}
-                  className="p-2 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-800 transition text-xs flex items-center space-x-1"
+                  className="p-2 bg-[#12161f] hover:bg-[#1a202c] text-slate-300 rounded-md border border-[#262f40] transition text-xs flex items-center space-x-1"
                   title="ယခင် စာတန်းထိုးသို့ သွားမည် (Up Arrow)"
                 >
                   <Rewind className="w-3.5 h-3.5 text-amber-400" />
@@ -599,7 +599,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
 
                 <button
                   onClick={() => skipSeconds(-3)}
-                  className="p-2 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-800 transition text-xs flex items-center space-x-1"
+                  className="p-2 bg-[#12161f] hover:bg-[#1a202c] text-slate-300 rounded-md border border-[#262f40] transition text-xs flex items-center space-x-1"
                   title="3 စက္ကန့် နောက်သို့ ကျော်မည် (Left Arrow)"
                 >
                   <span className="text-[11px] font-bold text-slate-300">-3s</span>
@@ -607,7 +607,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
 
                 <button
                   onClick={togglePlay}
-                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-xl transition text-xs flex items-center space-x-1.5 shadow-md shadow-emerald-500/10"
+                  className="px-4 py-2 bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-bold rounded-md transition text-xs flex items-center space-x-1.5 shadow-md shadow-emerald-500/10"
                 >
                   {isPlaying ? (
                     <>
@@ -624,7 +624,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
 
                 <button
                   onClick={() => skipSeconds(3)}
-                  className="p-2 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-800 transition text-xs flex items-center space-x-1"
+                  className="p-2 bg-[#12161f] hover:bg-[#1a202c] text-slate-300 rounded-md border border-[#262f40] transition text-xs flex items-center space-x-1"
                   title="3 စက္ကန့် ရှေ့သို့ ကျော်မည် (Right Arrow)"
                 >
                   <span className="text-[11px] font-bold text-slate-300">+3s</span>
@@ -632,7 +632,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
 
                 <button
                   onClick={jumpToNextSub}
-                  className="p-2 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-800 transition text-xs flex items-center space-x-1"
+                  className="p-2 bg-[#12161f] hover:bg-[#1a202c] text-slate-300 rounded-md border border-[#262f40] transition text-xs flex items-center space-x-1"
                   title="နောက် စာတန်းထိုးသို့ သွားမည် (Down Arrow)"
                 >
                   <span className="hidden xs:inline text-[11px]">နောက်</span>
@@ -641,13 +641,13 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
               </div>
 
               {/* Middle: Speed Selector */}
-              <div className="flex items-center space-x-1 bg-slate-950 p-1 rounded-xl border border-slate-800 text-[11px]">
+              <div className="flex items-center space-x-1 bg-[#07090e] p-1 rounded-md border border-[#212734] text-[11px]">
                 <Gauge className="w-3.5 h-3.5 text-emerald-400 ml-1" />
                 {[0.5, 0.75, 1.0, 1.25, 1.5].map((spd) => (
                   <button
                     key={spd}
                     onClick={() => setPlaybackSpeed(spd)}
-                    className={`px-2 py-0.5 rounded-lg font-mono font-bold transition ${
+                    className={`px-2 py-0.5 rounded font-mono font-bold transition ${
                       playbackSpeed === spd
                         ? 'bg-emerald-500 text-slate-950'
                         : 'text-slate-400 hover:text-slate-200'
@@ -662,7 +662,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
               <div className="flex items-center space-x-1.5">
                 <button
                   onClick={toggleMute}
-                  className="p-2 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-800 transition"
+                  className="p-2 bg-[#12161f] hover:bg-[#1a202c] text-slate-300 rounded-md border border-[#262f40] transition"
                   title={isMuted ? 'အသံဖွင့်မည်' : 'အသံပိတ်မည်'}
                 >
                   {isMuted ? (
@@ -674,7 +674,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
 
                 <button
                   onClick={toggleFullscreen}
-                  className="p-2 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded-xl border border-slate-800 transition"
+                  className="p-2 bg-[#12161f] hover:bg-[#1a202c] text-slate-300 rounded-md border border-[#262f40] transition"
                   title="မျက်နှာပြင်ပြည့် ကြည့်မည်"
                 >
                   <Maximize2 className="w-4 h-4 text-slate-300" />
@@ -684,8 +684,8 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
           </div>
 
           {/* Prominent Live Subtitle Quick Editor & Sync Card */}
-          <div className="bg-slate-900 border border-emerald-500/40 rounded-2xl p-4 shadow-lg space-y-3">
-            <div className="flex flex-wrap items-center justify-between border-b border-slate-800 pb-2.5 gap-2">
+          <div className="bg-[#0e1219] border border-emerald-500/30 rounded-lg p-4 shadow-sm space-y-3">
+            <div className="flex flex-wrap items-center justify-between border-b border-[#212734] pb-2.5 gap-2">
               <div className="flex items-center space-x-2">
                 <div className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse" />
                 <span className="text-xs font-bold text-slate-100 flex items-center space-x-1.5">
@@ -695,24 +695,24 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
               </div>
 
               {activeSub && (
-                <span className="bg-emerald-500/20 text-emerald-400 font-mono text-xs px-2.5 py-0.5 rounded-md font-bold border border-emerald-500/30">
+                <span className="bg-emerald-500/10 text-emerald-400 font-mono text-xs px-2.5 py-0.5 rounded font-bold border border-emerald-500/20">
                   #{activeSub.index} ({activeSub.startTime} → {activeSub.endTime})
                 </span>
               )}
             </div>
 
             {/* Target Field Selector Switcher */}
-            <div className="flex items-center space-x-2 bg-slate-950 p-1.5 rounded-xl border border-slate-800 text-xs">
+            <div className="flex items-center space-x-2 bg-[#07090e] p-1.5 rounded-md border border-[#212734] text-xs">
               <span className="text-[11px] text-slate-400 font-semibold px-1 whitespace-nowrap">
                 ပြင်ဆင်လိုသည့် စာသား:
               </span>
               <button
                 type="button"
                 onClick={() => setEditTarget('translated')}
-                className={`flex-1 py-1.5 px-3 rounded-lg font-bold text-xs transition flex items-center justify-center space-x-1.5 ${
+                className={`flex-1 py-1.5 px-3 rounded font-bold text-xs transition flex items-center justify-center space-x-1.5 ${
                   editTarget === 'translated'
-                    ? 'bg-emerald-500 text-slate-950 shadow-md ring-2 ring-emerald-400/40'
-                    : 'text-slate-400 hover:text-slate-200 bg-slate-900'
+                    ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200 bg-[#12161f]'
                 }`}
               >
                 <span>✨ ဘာသာပြန် စာသား (Translated)</span>
@@ -720,10 +720,10 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
               <button
                 type="button"
                 onClick={() => setEditTarget('original')}
-                className={`flex-1 py-1.5 px-3 rounded-lg font-bold text-xs transition flex items-center justify-center space-x-1.5 ${
+                className={`flex-1 py-1.5 px-3 rounded font-bold text-xs transition flex items-center justify-center space-x-1.5 ${
                   editTarget === 'original'
-                    ? 'bg-sky-500 text-slate-950 shadow-md ring-2 ring-sky-400/40'
-                    : 'text-slate-400 hover:text-slate-200 bg-slate-900'
+                    ? 'bg-sky-500 text-slate-950 shadow-sm'
+                    : 'text-slate-400 hover:text-slate-200 bg-[#12161f]'
                 }`}
               >
                 <span>📝 မူရင်း စာသား (Original)</span>
@@ -733,7 +733,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
             {activeSub ? (
               <div className="space-y-3">
                 {/* Secondary Reference Box (Shows the non-active target text) */}
-                <div className="bg-slate-950 p-2.5 rounded-xl border border-slate-800 text-xs text-slate-300 flex items-center justify-between">
+                <div className="bg-[#07090e] p-2.5 rounded-md border border-[#212734] text-xs text-slate-300 flex items-center justify-between">
                   <div className="flex-1 mr-2">
                     <span className="text-[10px] text-slate-500 block uppercase font-mono">
                       {editTarget === 'translated' ? 'မူရင်း စာသား (Original Source):' : 'မြန်မာ ဘာသာပြန် (Translated):'}
@@ -746,7 +746,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                   </div>
                   <button
                     onClick={() => handleCleanItemSound(activeSub.id)}
-                    className="flex items-center space-x-1 px-2.5 py-1 bg-slate-900 hover:bg-slate-800 text-rose-300 text-[10px] rounded-lg border border-slate-800 transition whitespace-nowrap"
+                    className="flex items-center space-x-1 px-2.5 py-1 bg-[#12161f] hover:bg-[#1a202c] text-rose-300 text-[10px] rounded border border-[#262f40] transition whitespace-nowrap"
                     title="ဟောဟဲ/အသံဆူညံသံများ ဖျက်မည်"
                   >
                     <Wand2 className="w-3 h-3 text-rose-400" />
@@ -782,7 +782,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                         ? 'မူရင်း အင်္ဂလိပ် စာတန်းထိုး ပြင်ဆင်ပါ...'
                         : 'မြန်မာ စာတန်းထိုး ရေးသားပါ...'
                     }
-                    className={`w-full bg-slate-950 border rounded-xl p-3 text-sm font-semibold focus:outline-none focus:ring-1 shadow-inner transition ${
+                    className={`w-full bg-[#07090e] border rounded-md p-3 text-sm font-semibold focus:outline-none focus:ring-1 shadow-inner transition ${
                       editTarget === 'original'
                         ? 'border-sky-500/60 text-sky-200 focus:border-sky-400 focus:ring-sky-400/50'
                         : 'border-emerald-500/60 text-emerald-300 focus:border-emerald-400 focus:ring-emerald-400/50'
@@ -799,7 +799,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                     <button
                       key={idx}
                       onClick={() => handleInsertSymbol(activeSub.id, helper.symbol)}
-                      className="px-2 py-0.5 bg-slate-950 hover:bg-slate-800 text-slate-200 border border-slate-800 rounded-md font-mono text-[11px] whitespace-nowrap transition"
+                      className="px-2 py-0.5 bg-[#07090e] hover:bg-[#161c28] text-slate-200 border border-[#212734] rounded font-mono text-[11px] whitespace-nowrap transition"
                       title={helper.description}
                     >
                       {helper.symbol}
@@ -808,12 +808,12 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                 </div>
 
                 {/* Instant Timestamp Adjusters */}
-                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-slate-800/80 text-[11px]">
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1 border-t border-[#212734] text-[11px]">
                   <div className="flex items-center space-x-1.5 flex-wrap">
                     <span className="text-slate-400 text-[10px]">စတင်ချိန်:</span>
                     <button
                       onClick={() => handleSetStartToNow(activeSub.id)}
-                      className="px-2.5 py-1 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold rounded-lg border border-emerald-500/30 transition flex items-center space-x-1 text-[11px]"
+                      className="px-2.5 py-1 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 font-bold rounded border border-emerald-500/30 transition flex items-center space-x-1 text-[11px]"
                       title="လက်ရှိ ဗီဒီယိုနေရာကို စတင်ချိန်အဖြစ် သတ်မှတ်မည် (Alt+[)"
                     >
                       <Target className="w-3.5 h-3.5 text-emerald-400" />
@@ -821,13 +821,13 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                     </button>
                     <button
                       onClick={() => handleAdjustTime(activeSub.id, 'startMs', -100)}
-                      className="px-1.5 py-0.5 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded border border-slate-800 font-mono"
+                      className="px-1.5 py-0.5 bg-[#07090e] hover:bg-[#161c28] text-slate-300 rounded border border-[#212734] font-mono"
                     >
                       -100ms
                     </button>
                     <button
                       onClick={() => handleAdjustTime(activeSub.id, 'startMs', 100)}
-                      className="px-1.5 py-0.5 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded border border-slate-800 font-mono"
+                      className="px-1.5 py-0.5 bg-[#07090e] hover:bg-[#161c28] text-slate-300 rounded border border-[#212734] font-mono"
                     >
                       +100ms
                     </button>
@@ -837,7 +837,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                     <span className="text-slate-400 text-[10px]">ပြီးဆုံးချိန်:</span>
                     <button
                       onClick={() => handleSetEndToNow(activeSub.id)}
-                      className="px-2.5 py-1 bg-amber-500/20 hover:bg-amber-500/30 text-amber-300 font-bold rounded-lg border border-amber-500/30 transition flex items-center space-x-1 text-[11px]"
+                      className="px-2.5 py-1 bg-amber-500/10 hover:bg-amber-500/20 text-amber-300 font-bold rounded border border-amber-500/30 transition flex items-center space-x-1 text-[11px]"
                       title="လက်ရှိ ဗီဒီယိုနေရာကို ပြီးဆုံးချိန်အဖြစ် သတ်မှတ်မည် (Alt+])"
                     >
                       <Target className="w-3.5 h-3.5 text-amber-400" />
@@ -845,13 +845,13 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                     </button>
                     <button
                       onClick={() => handleAdjustTime(activeSub.id, 'endMs', -100)}
-                      className="px-1.5 py-0.5 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded border border-slate-800 font-mono"
+                      className="px-1.5 py-0.5 bg-[#07090e] hover:bg-[#161c28] text-slate-300 rounded border border-[#212734] font-mono"
                     >
                       -100ms
                     </button>
                     <button
                       onClick={() => handleAdjustTime(activeSub.id, 'endMs', 100)}
-                      className="px-1.5 py-0.5 bg-slate-950 hover:bg-slate-800 text-slate-300 rounded border border-slate-800 font-mono"
+                      className="px-1.5 py-0.5 bg-[#07090e] hover:bg-[#161c28] text-slate-300 rounded border border-[#212734] font-mono"
                     >
                       +100ms
                     </button>
@@ -859,12 +859,12 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                 </div>
 
                 {/* Add / Merge / Delete Quick Action Row for activeSub */}
-                <div className="flex items-center space-x-1.5 pt-2 border-t border-slate-800">
+                <div className="flex items-center space-x-1.5 pt-2 border-t border-[#212734]">
                   {onAddItem && (
                     <button
                       type="button"
                       onClick={() => onAddItem(activeSub.id)}
-                      className="flex-1 py-1 px-2 bg-slate-950 hover:bg-emerald-500/20 text-emerald-400 border border-slate-800 hover:border-emerald-500/40 rounded-lg text-[11px] font-bold transition flex items-center justify-center space-x-1"
+                      className="flex-1 py-1 px-2 bg-[#07090e] hover:bg-emerald-500/10 text-emerald-400 border border-[#212734] hover:border-emerald-500/30 rounded text-[11px] font-bold transition flex items-center justify-center space-x-1"
                       title="ဒီစာကြောင်းနောက်တွင် စာကြောင်းအသစ်ထည့်မည်"
                     >
                       <Plus className="w-3.5 h-3.5 text-emerald-400" />
@@ -876,7 +876,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                     <button
                       type="button"
                       onClick={() => onMergeItem(activeSub.id)}
-                      className="flex-1 py-1 px-2 bg-slate-950 hover:bg-sky-500/20 text-sky-400 border border-slate-800 hover:border-sky-500/40 rounded-lg text-[11px] font-bold transition flex items-center justify-center space-x-1"
+                      className="flex-1 py-1 px-2 bg-[#07090e] hover:bg-sky-500/10 text-sky-400 border border-[#212734] hover:border-sky-500/30 rounded text-[11px] font-bold transition flex items-center justify-center space-x-1"
                       title="နောက်စာကြောင်းနှင့် ပေါင်းမည်"
                     >
                       <GitMerge className="w-3.5 h-3.5 text-sky-400" />
@@ -888,7 +888,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                     <button
                       type="button"
                       onClick={() => onDeleteItem(activeSub.id)}
-                      className="py-1 px-2.5 bg-slate-950 hover:bg-rose-500/20 text-rose-400 border border-slate-800 hover:border-rose-500/40 rounded-lg text-[11px] font-bold transition flex items-center justify-center space-x-1"
+                      className="py-1 px-2.5 bg-[#07090e] hover:bg-rose-500/10 text-rose-400 border border-[#212734] hover:border-rose-500/30 rounded text-[11px] font-bold transition flex items-center justify-center space-x-1"
                       title="ဒီစာကြောင်း ဖျက်မည်"
                     >
                       <Trash2 className="w-3.5 h-3.5 text-rose-400" />
@@ -898,7 +898,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                 </div>
               </div>
             ) : (
-              <div className="bg-slate-950 p-4 rounded-xl border border-slate-800/80 text-center text-xs text-slate-400 space-y-2">
+              <div className="bg-[#07090e] p-4 rounded-md border border-[#212734] text-center text-xs text-slate-400 space-y-2">
                 <p className="text-slate-300 font-medium">
                   လက်ရှိ ဗီဒီယိုနေရာတွင် စာတန်းထိုး မရှိသေးပါ
                 </p>
@@ -906,7 +906,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                   <button
                     type="button"
                     onClick={() => onAddItem(undefined, currentTimeMs)}
-                    className="px-3 py-1.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold border border-emerald-500/40 rounded-xl text-xs transition inline-flex items-center space-x-1.5 shadow-sm"
+                    className="px-3 py-1.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 font-bold border border-emerald-500/30 rounded-md text-xs transition inline-flex items-center space-x-1.5 shadow-sm"
                   >
                     <Plus className="w-4 h-4 text-emerald-400" />
                     <span>လက်ရှိ ဗီဒီယိုနေရာ၌ စာကြောင်းအသစ်ထည့်မည်</span>
@@ -917,7 +917,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
           </div>
 
           {/* Subtitle Overlay Config Options Drawer */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
+          <div className="bg-[#0e1219] border border-[#212734] rounded-lg p-4 shadow-sm space-y-3">
             <button
               onClick={() => setShowAdvancedControls(!showAdvancedControls)}
               className="w-full flex items-center justify-between text-xs font-bold text-slate-200"
@@ -934,7 +934,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
             </button>
 
             {showAdvancedControls && (
-              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs pt-2 border-t border-slate-800 animate-fadeIn">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 text-xs pt-2 border-t border-[#212734]">
                 {/* Display Mode */}
                 <div>
                   <label className="block text-slate-400 mb-1">ပြသမည့် မုဒ် (Mode):</label>
@@ -946,7 +946,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                         subtitleMode: e.target.value as any,
                       })
                     }
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-slate-200 focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-[#07090e] border border-[#212734] rounded-md p-2 text-slate-200 focus:outline-none focus:border-emerald-500"
                   >
                     <option value="translated">မြန်မာဘာသာ သီးသန့် (Myanmar Only)</option>
                     <option value="dual">နှစ်ဘာသာ ပူးတွဲ (Dual English + Myanmar)</option>
@@ -985,7 +985,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                         textPosition: e.target.value as any,
                       })
                     }
-                    className="w-full bg-slate-950 border border-slate-800 rounded-xl p-2 text-slate-200 focus:outline-none focus:border-emerald-500"
+                    className="w-full bg-[#07090e] border border-[#212734] rounded-md p-2 text-slate-200 focus:outline-none focus:border-emerald-500"
                   >
                     <option value="bottom">အောက်ခြေ (Bottom)</option>
                     <option value="top">အထက်ပိုင်း (Top)</option>
@@ -1000,21 +1000,21 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
         {/* Right 1 Col: Video Selector & Direct Editable Subtitle List */}
         <div className="space-y-4">
           {/* Custom Video Source Loader */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-3">
+          <div className="bg-[#0e1219] border border-[#212734] rounded-lg p-4 shadow-sm space-y-3">
             <div className="flex items-center justify-between">
               <h3 className="text-xs font-bold text-slate-200 flex items-center space-x-1.5">
                 <Film className="w-4 h-4 text-emerald-400" />
                 <span>ဗီဒီယို ဖိုင် ရွေးချယ်ရန် (Video Source)</span>
               </h3>
               {customVideoFileName && (
-                <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-2 py-0.5 rounded-full font-mono font-bold border border-emerald-500/30 uppercase">
+                <span className="text-[10px] bg-emerald-500/10 text-emerald-300 px-2 py-0.5 rounded font-mono font-bold border border-emerald-500/20 uppercase">
                   {customVideoFileName.split('.').pop() || 'VIDEO'}
                 </span>
               )}
             </div>
 
             {customVideoFileName ? (
-              <div className="bg-slate-950 p-2.5 rounded-xl border border-emerald-500/30 space-y-2">
+              <div className="bg-[#07090e] p-2.5 rounded-md border border-emerald-500/30 space-y-2">
                 <div className="flex items-center justify-between text-xs">
                   <div className="flex items-center space-x-2 truncate mr-2">
                     <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
@@ -1034,7 +1034,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                 </div>
               </div>
             ) : (
-              <label className="flex items-center justify-center space-x-2 border border-dashed border-slate-700 hover:border-emerald-500 bg-slate-950 p-3 rounded-xl cursor-pointer text-xs text-slate-300 transition">
+              <label className="flex items-center justify-center space-x-2 border border-dashed border-[#262f40] hover:border-emerald-500/60 bg-[#07090e] p-3 rounded-md cursor-pointer text-xs text-slate-300 transition">
                 <Upload className="w-4 h-4 text-emerald-400" />
                 <span>မိမိ ဗီဒီယိုဖိုင် ထည့်မည် (MKV / MP4 / WebM)</span>
                 <input
@@ -1046,14 +1046,14 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
               </label>
             )}
 
-            <div className="text-[10px] text-slate-400 flex items-center space-x-1.5 bg-slate-950/60 px-2.5 py-1.5 rounded-lg border border-slate-800/80">
+            <div className="text-[10px] text-slate-400 flex items-center space-x-1.5 bg-[#07090e]/60 px-2.5 py-1.5 rounded border border-[#212734]">
               <Sparkles className="w-3 h-3 text-emerald-400 flex-shrink-0" />
               <span>MKV, MP4, WebM, MOV ဗီဒီယိုဖိုင်များ တိုက်ရိုက် ကြည့်ရှု အသုံးပြုနိုင်ပါသည်</span>
             </div>
           </div>
 
           {/* Subtitle List with Direct Inline Editable Textboxes */}
-          <div className="bg-slate-900 border border-slate-800 rounded-2xl p-4 shadow-sm space-y-3 flex flex-col h-[640px]">
+          <div className="bg-[#0e1219] border border-[#212734] rounded-lg p-4 shadow-sm space-y-3 flex flex-col h-[640px]">
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <h3 className="text-xs font-bold text-slate-200">
@@ -1064,20 +1064,20 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                     type="checkbox"
                     checked={autoScroll}
                     onChange={(e) => setAutoScroll(e.target.checked)}
-                    className="rounded bg-slate-950 border-slate-800 text-emerald-500 focus:ring-0"
+                    className="rounded bg-[#07090e] border-[#212734] text-emerald-500 focus:ring-0"
                   />
                   <span>အလိုအလျောက် ရွှေ့မည်</span>
                 </label>
               </div>
 
               {/* Mode Toggle for List Inputs */}
-              <div className="grid grid-cols-2 gap-1.5 bg-slate-950 p-1 rounded-xl border border-slate-800 text-[11px]">
+              <div className="grid grid-cols-2 gap-1.5 bg-[#07090e] p-1 rounded-md border border-[#212734] text-[11px]">
                 <button
                   type="button"
                   onClick={() => setEditTarget('translated')}
-                  className={`py-1 rounded-lg font-bold transition text-center ${
+                  className={`py-1 rounded font-bold transition text-center ${
                     editTarget === 'translated'
-                      ? 'bg-emerald-500 text-slate-950 shadow'
+                      ? 'bg-emerald-500 text-slate-950 shadow-sm'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
@@ -1086,9 +1086,9 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                 <button
                   type="button"
                   onClick={() => setEditTarget('original')}
-                  className={`py-1 rounded-lg font-bold transition text-center ${
+                  className={`py-1 rounded font-bold transition text-center ${
                     editTarget === 'original'
-                      ? 'bg-sky-500 text-slate-950 shadow'
+                      ? 'bg-sky-500 text-slate-950 shadow-sm'
                       : 'text-slate-400 hover:text-slate-200'
                   }`}
                 >
@@ -1104,7 +1104,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                   value={subSearch}
                   onChange={(e) => setSubSearch(e.target.value)}
                   placeholder="စာကြောင်း ရှာရန်..."
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
+                  className="w-full bg-[#07090e] border border-[#212734] rounded-md pl-8 pr-3 py-1.5 text-xs text-slate-200 focus:outline-none focus:border-emerald-500"
                 />
               </div>
             </div>
@@ -1122,10 +1122,10 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                   <div
                     key={item.id}
                     ref={(el) => { subItemRefs.current[item.id] = el; }}
-                    className={`pt-3 first:pt-0 rounded-xl p-2.5 transition border ${
+                    className={`pt-3 first:pt-0 rounded-md p-2.5 transition border ${
                       isCurrent
-                        ? 'bg-emerald-500/15 border-emerald-500/70 shadow-lg ring-1 ring-emerald-500/30'
-                        : 'bg-slate-950/80 border-slate-800/80 hover:border-slate-700'
+                        ? 'bg-emerald-500/10 border-emerald-500/60 shadow-md ring-1 ring-emerald-500/30'
+                        : 'bg-[#07090e] border-[#212734] hover:border-[#2f394d]'
                     }`}
                   >
                     {/* Item Top Metadata & Play Jump & Actions */}
@@ -1134,7 +1134,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                         <button
                           type="button"
                           onClick={() => jumpToTime(item.startMs)}
-                          className="px-2 py-0.5 bg-emerald-500/20 hover:bg-emerald-500/30 text-emerald-300 font-bold rounded flex items-center space-x-1 transition"
+                          className="px-2 py-0.5 bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-300 font-bold rounded flex items-center space-x-1 transition"
                           title="ဒီနေရာသို့ ဗီဒီယို သွားမည်"
                         >
                           <Play className="w-2.5 h-2.5 fill-current text-emerald-400" />
@@ -1158,7 +1158,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                               e.stopPropagation();
                               onAddItem(item.id);
                             }}
-                            className="p-1 hover:bg-emerald-500/20 text-slate-400 hover:text-emerald-400 rounded transition"
+                            className="p-1 hover:bg-emerald-500/10 text-slate-400 hover:text-emerald-400 rounded transition"
                             title="ဒီနောက်တွင် စာကြောင်းအသစ်ထည့်မည်"
                           >
                             <Plus className="w-3.5 h-3.5" />
@@ -1172,7 +1172,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                               e.stopPropagation();
                               onMergeItem(item.id);
                             }}
-                            className="p-1 hover:bg-sky-500/20 text-slate-400 hover:text-sky-400 rounded transition"
+                            className="p-1 hover:bg-sky-500/10 text-slate-400 hover:text-sky-400 rounded transition"
                             title="နောက်တစ်ကြောင်းနှင့် ပေါင်းမည်"
                           >
                             <GitMerge className="w-3.5 h-3.5" />
@@ -1186,7 +1186,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                               e.stopPropagation();
                               onDeleteItem(item.id);
                             }}
-                            className="p-1 hover:bg-rose-500/20 text-slate-400 hover:text-rose-400 rounded transition"
+                            className="p-1 hover:bg-rose-500/10 text-slate-400 hover:text-rose-400 rounded transition"
                             title="ဒီစာကြောင်း ဖျက်မည်"
                           >
                             <Trash2 className="w-3.5 h-3.5" />
@@ -1196,7 +1196,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                     </div>
 
                     {/* Reference Line depending on Edit Target */}
-                    <div className="text-[11px] text-slate-400 mb-1 font-sans line-clamp-2 bg-slate-900/50 p-1.5 rounded border border-slate-800/50">
+                    <div className="text-[11px] text-slate-400 mb-1 font-sans line-clamp-2 bg-[#12161f] p-1.5 rounded border border-[#212734]">
                       <span className="text-[9px] uppercase font-mono text-slate-500 block">
                         {editTarget === 'translated' ? 'Original Source:' : 'Translated Text:'}
                       </span>
@@ -1229,14 +1229,14 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                               ? 'မူရင်း စာတန်းထိုး တိုက်ရိုက် ပြင်ရန်...'
                               : 'မြန်မာ စာတန်းထိုး တိုက်ရိုက် ရေးရန်...'
                           }
-                          className={`w-full bg-slate-900 border rounded-lg px-2.5 py-1.5 text-xs font-semibold focus:outline-none transition ${
+                          className={`w-full bg-[#12161f] border rounded px-2.5 py-1.5 text-xs font-semibold focus:outline-none transition ${
                             isCurrent
                               ? editTarget === 'original'
                                 ? 'border-sky-500 text-sky-200 focus:ring-1 focus:ring-sky-400'
                                 : 'border-emerald-500 text-emerald-300 focus:ring-1 focus:ring-emerald-400'
                               : editTarget === 'original'
-                              ? 'border-slate-800 text-slate-200 focus:border-sky-500'
-                              : 'border-slate-800 text-slate-200 focus:border-emerald-500'
+                              ? 'border-[#212734] text-slate-200 focus:border-sky-500'
+                              : 'border-[#212734] text-slate-200 focus:border-emerald-500'
                           }`}
                         />
                       </div>
@@ -1247,7 +1247,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                           <button
                             type="button"
                             onClick={() => handleSetStartToNow(item.id)}
-                            className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 text-emerald-400 rounded border border-slate-800 font-sans"
+                            className="px-1.5 py-0.5 bg-[#12161f] hover:bg-[#1a202c] text-emerald-400 rounded border border-[#212734] font-sans"
                             title="စတင်ချိန်ကို လက်ရှိ ဗီဒီယိုနေရာ သတ်မှတ်မည်"
                           >
                             Set Start
@@ -1255,14 +1255,14 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                           <button
                             type="button"
                             onClick={() => handleAdjustTime(item.id, 'startMs', -100)}
-                            className="px-1 py-0.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded font-mono"
+                            className="px-1 py-0.5 bg-[#12161f] hover:bg-[#1a202c] text-slate-300 rounded border border-[#212734] font-mono"
                           >
                             -100
                           </button>
                           <button
                             type="button"
                             onClick={() => handleAdjustTime(item.id, 'startMs', 100)}
-                            className="px-1 py-0.5 bg-slate-900 hover:bg-slate-800 text-slate-300 rounded font-mono"
+                            className="px-1 py-0.5 bg-[#12161f] hover:bg-[#1a202c] text-slate-300 rounded border border-[#212734] font-mono"
                           >
                             +100
                           </button>
@@ -1272,7 +1272,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                           <button
                             type="button"
                             onClick={() => handleSetEndToNow(item.id)}
-                            className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 text-amber-400 rounded border border-slate-800 font-sans"
+                            className="px-1.5 py-0.5 bg-[#12161f] hover:bg-[#1a202c] text-amber-400 rounded border border-[#212734] font-sans"
                             title="ပြီးဆုံးချိန်ကို လက်ရှိ ဗီဒီယိုနေရာ သတ်မှတ်မည်"
                           >
                             Set End
@@ -1280,14 +1280,14 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                           <button
                             type="button"
                             onClick={() => handleInsertSymbol(item.id, '။')}
-                            className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 text-slate-200 rounded font-mono"
+                            className="px-1.5 py-0.5 bg-[#12161f] hover:bg-[#1a202c] text-slate-200 rounded border border-[#212734] font-mono"
                           >
                             ။
                           </button>
                           <button
                             type="button"
                             onClick={() => handleInsertSymbol(item.id, '၊')}
-                            className="px-1.5 py-0.5 bg-slate-900 hover:bg-slate-800 text-slate-200 rounded font-mono"
+                            className="px-1.5 py-0.5 bg-[#12161f] hover:bg-[#1a202c] text-slate-200 rounded border border-[#212734] font-mono"
                           >
                             ၊
                           </button>

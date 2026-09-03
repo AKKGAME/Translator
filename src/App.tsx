@@ -1,10 +1,12 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { ShieldAlert } from 'lucide-react';
 import {
   SubtitleItem,
   SubtitleFileMeta,
   TranslationSettings,
   VideoConfig,
+  UsageConfig,
+  UserAccessStatus,
 } from './types';
 import { parseSubtitles, msToTimeSRT } from './utils/subtitleParser';
 import { DEFAULT_GLOSSARY_TERMS } from './utils/burmeseUtils';
@@ -17,7 +19,15 @@ import { TimeOffsetModal } from './components/TimeOffsetModal';
 import { ExportModal } from './components/ExportModal';
 import { DonationModal } from './components/DonationModal';
 import { AdminPanel } from './components/AdminPanel';
+import { AccessLimitExceededModal } from './components/AccessLimitExceededModal';
 import { translateDirectlyViaGemini } from './utils/geminiDirect';
+import {
+  getLocalUsageConfig,
+  getSavedAccessCode,
+  setSavedAccessCode,
+  evaluateUserAccessStatus,
+  incrementFreeUsageToday,
+} from './utils/accessKeyUtils';
 
 export default function App() {
   const [items, setItems] = useState<SubtitleItem[]>([]);
@@ -26,6 +36,10 @@ export default function App() {
   const [activeSubIndex, setActiveSubIndex] = useState<number | undefined>(undefined);
   const [isDonationModalOpen, setIsDonationModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isLimitModalOpen, setIsLimitModalOpen] = useState(false);
+
+  // Usage Config & Access Status
+  const [usageConfig, setUsageConfig] = useState<UsageConfig>(() => getLocalUsageConfig());
 
   // Video Player Configuration
   const [videoConfig, setVideoConfig] = useState<VideoConfig>({
@@ -42,6 +56,7 @@ export default function App() {
   // Settings
   const [translationSettings, setTranslationSettings] = useState<TranslationSettings>(() => {
     const savedKey = typeof window !== 'undefined' ? (localStorage.getItem('user_gemini_api_key') || '') : '';
+    const savedAccessCode = getSavedAccessCode();
     let savedDonation = undefined;
     if (typeof window !== 'undefined') {
       try {
@@ -66,6 +81,7 @@ export default function App() {
       conciseness: 'concise',
       customPromptNote: '',
       customApiKey: savedKey,
+      accessCode: savedAccessCode,
       donationConfig: savedDonation || {
         kpayPhone: '09770033353',
         kpayName: 'Aung Kyaw Khant',
@@ -76,15 +92,20 @@ export default function App() {
     };
   });
 
-  // Fetch server donation config & telegram config on mount
-  React.useEffect(() => {
+  // Access status calculation
+  const accessStatus: UserAccessStatus = evaluateUserAccessStatus(
+    translationSettings.customApiKey,
+    translationSettings.accessCode,
+    usageConfig
+  );
+
+  // Fetch server donation config, telegram config & usage config on mount
+  useEffect(() => {
     fetch('/api/donation-config')
       .then((res) => {
         if (!res.ok) return null;
         const contentType = res.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) {
-          return null;
-        }
+        if (!contentType || !contentType.includes('application/json')) return null;
         return res.json();
       })
       .then((data) => {
@@ -95,10 +116,17 @@ export default function App() {
           }));
         }
       })
-      .catch(() => {
-        // Static host fallback (e.g. Hostinger public_html)
-      });
-  }, []);
+      .catch(() => {});
+
+    fetch('/api/usage-status?code=' + encodeURIComponent(translationSettings.accessCode || ''))
+      .then((res) => (res.ok ? res.json() : null))
+      .then((data) => {
+        if (data && data.usageConfig) {
+          setUsageConfig(data.usageConfig);
+        }
+      })
+      .catch(() => {});
+  }, [translationSettings.accessCode]);
 
   const handleUpdateSettings = (newSettings: TranslationSettings) => {
     setTranslationSettings(newSettings);
@@ -232,6 +260,17 @@ export default function App() {
   const handleTranslateSubtitles = async (onlyPendingOrError: boolean = false) => {
     if (items.length === 0 || isTranslating) return;
 
+    // Check user access limit before translation
+    const currentStatus = evaluateUserAccessStatus(
+      translationSettings.customApiKey,
+      translationSettings.accessCode,
+      usageConfig
+    );
+    if (!currentStatus.canTranslate) {
+      setIsLimitModalOpen(true);
+      return;
+    }
+
     isCancelledRef.current = false;
     setIsTranslating(true);
 
@@ -314,6 +353,12 @@ export default function App() {
               );
             } else if (!res.ok) {
               const errData = await res.json().catch(() => ({}));
+
+              if (res.status === 403 || errData.isLimitExceeded) {
+                setIsLimitModalOpen(true);
+                throw new Error(errData.error || 'အသုံးပြုမှု ကန့်သတ်ချက် ပြည့်သွားပါပြီ (VIP Key သို့မဟုတ် Gemini API Key ထည့်သွင်းပါ)');
+              }
+
               const isRateLimit = res.status === 429 || errData.isRateLimit;
               if (isRateLimit) {
                 if (attempt < maxAttempts) {
@@ -330,6 +375,9 @@ export default function App() {
               translations = data.translations || [];
             }
           } catch (fetchErr: any) {
+            if (fetchErr.message && fetchErr.message.includes('ကန့်သတ်ချက်')) {
+              throw fetchErr;
+            }
             // Network failure or static host without backend
             translations = await translateDirectlyViaGemini(
               payload.items,
@@ -356,9 +404,26 @@ export default function App() {
               return item;
             })
           );
+
+          if (currentStatus.tier === 'free') {
+            incrementFreeUsageToday(chunk.length);
+          }
+
           success = true;
         } catch (err: any) {
           console.error(`Batch translation error (attempt ${attempt}/${maxAttempts}):`, err);
+          if (err.message && err.message.includes('ကန့်သတ်ချက်')) {
+            isCancelledRef.current = true;
+            setItems((prev) =>
+              prev.map((item) =>
+                chunk.some((c) => c.id === item.id)
+                  ? { ...item, status: 'error', errorMessage: err.message }
+                  : item
+              )
+            );
+            break;
+          }
+
           if (attempt < maxAttempts && !isCancelledRef.current) {
             await new Promise((resolve) => setTimeout(resolve, 4000));
           } else {
@@ -386,6 +451,16 @@ export default function App() {
   const handleTranslateSingleItem = async (id: number) => {
     const item = items.find((i) => i.id === id);
     if (!item) return;
+
+    const currentStatus = evaluateUserAccessStatus(
+      translationSettings.customApiKey,
+      translationSettings.accessCode,
+      usageConfig
+    );
+    if (!currentStatus.canTranslate) {
+      setIsLimitModalOpen(true);
+      return;
+    }
 
     setItems((prev) =>
       prev.map((i) => (i.id === id ? { ...i, status: 'translating', errorMessage: undefined } : i))
@@ -422,6 +497,10 @@ export default function App() {
         if (res.ok && contentType.includes('application/json')) {
           const data = await res.json();
           translatedText = data.translations?.[0]?.translatedText || '';
+        } else if (res.status === 403) {
+          setIsLimitModalOpen(true);
+          const errData = await res.json().catch(() => ({}));
+          throw new Error(errData.error || 'အသုံးပြုမှု ကန့်သတ်ချက် ပြည့်သွားပါပြီ');
         } else {
           // Fallback to direct client-side translation
           const fallbackRes = await translateDirectlyViaGemini(
@@ -431,7 +510,10 @@ export default function App() {
           );
           translatedText = fallbackRes?.[0]?.translatedText || '';
         }
-      } catch (fetchErr) {
+      } catch (fetchErr: any) {
+        if (fetchErr.message && fetchErr.message.includes('ကန့်သတ်ချက်')) {
+          throw fetchErr;
+        }
         // Direct client fallback
         const fallbackRes = await translateDirectlyViaGemini(
           [{ id: item.id, text: item.originalText }],
@@ -442,6 +524,9 @@ export default function App() {
       }
 
       if (translatedText) {
+        if (currentStatus.tier === 'free') {
+          incrementFreeUsageToday(1);
+        }
         setItems((prev) =>
           prev.map((i) =>
             i.id === id
@@ -471,7 +556,7 @@ export default function App() {
   );
 
   return (
-    <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans selection:bg-emerald-500/30 selection:text-emerald-200">
+    <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col font-sans selection:bg-emerald-500/20 selection:text-emerald-300">
       <Header
         meta={meta}
         activeTab={activeTab}
@@ -485,6 +570,8 @@ export default function App() {
         onDonateClick={() => setIsDonationModalOpen(true)}
         hasApiKey={hasApiKey}
         onSettingsClick={() => setIsSettingsModalOpen(true)}
+        accessStatus={accessStatus}
+        onOpenAccessModal={() => setIsLimitModalOpen(true)}
       />
 
       <main className="flex-1 pb-12">
@@ -538,20 +625,47 @@ export default function App() {
       </main>
 
       {/* Footer */}
-      <footer className="border-t border-slate-900 bg-slate-950 py-4 px-6 text-xs text-slate-500">
+      <footer className="border-t border-[#212734] bg-[#0e1219] py-3.5 px-4 sm:px-6 text-xs text-slate-400">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <p className="text-center sm:text-left">
+          <p className="text-center sm:text-left text-[11px] text-slate-400">
             မြန်မာ ဗီဒီယိုစာတန်းထိုး AI ဘာသာပြန်အက်ပ် - Powered by AnimeGabar
           </p>
           <button
             onClick={() => setActiveTab('admin')}
-            className="text-[11px] text-slate-600 hover:text-indigo-400 transition flex items-center space-x-1 py-0.5 px-1.5 rounded hover:bg-slate-900"
+            className="text-[11px] text-slate-400 hover:text-emerald-400 transition flex items-center space-x-1.5 py-1 px-2.5 rounded border border-transparent hover:border-[#212734] hover:bg-[#12161f]"
           >
-            <ShieldAlert className="w-3 h-3 opacity-60" />
-            <span>AnimeGabar</span>
+            <ShieldAlert className="w-3.5 h-3.5 text-slate-400" />
+            <span>AnimeGabar Admin</span>
           </button>
         </div>
       </footer>
+
+      {/* Access Limit Exceeded / Key Entry Modal */}
+      <AccessLimitExceededModal
+        isOpen={isLimitModalOpen}
+        onClose={() => setIsLimitModalOpen(false)}
+        accessStatus={accessStatus}
+        usageConfig={usageConfig}
+        onSaveAccessCode={(code) => {
+          setSavedAccessCode(code);
+          setTranslationSettings((prev) => ({ ...prev, accessCode: code }));
+          fetch('/api/usage-status?code=' + encodeURIComponent(code))
+            .then((res) => (res.ok ? res.json() : null))
+            .then((data) => {
+              if (data && data.usageConfig) setUsageConfig(data.usageConfig);
+            })
+            .catch(() => {});
+        }}
+        onSaveCustomApiKey={(key) => {
+          localStorage.setItem('user_gemini_api_key', key);
+          setTranslationSettings((prev) => ({ ...prev, customApiKey: key }));
+        }}
+        onOpenDonateModal={() => {
+          setIsLimitModalOpen(false);
+          setIsDonationModalOpen(true);
+        }}
+        contactTelegram={usageConfig.contactTelegram || '@AnimeGabar'}
+      />
 
       {/* Translation Settings Setup Modal */}
       <TranslationSettingsModal

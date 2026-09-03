@@ -87,7 +87,7 @@ export default function App() {
         kpayName: 'Aung Kyaw Khant',
         wavePhone: '09668888555',
         waveName: 'Aung Kyaw Khant',
-        note: 'Server ဖိုးနှင့် AI ဘာသာပြန်စရိတ် ကူညီထောက်ပံ့ပေးသော စိတ်ကောင်းစေတနာရှင်များအားလုံးကို အထူးပင် ကျေးဇူးတင်ရှိပါသည်။',
+        note: 'Server ဖိုး ကူညီထောက်ပံ့ပေးသော စိတ်ကောင်းစေတနာရှင်များအားလုံးကို အထူးပင် ကျေးဇူးတင်ရှိပါသည်။',
       },
     };
   });
@@ -635,7 +635,7 @@ export default function App() {
             className="text-[11px] text-slate-400 hover:text-emerald-400 transition flex items-center space-x-1.5 py-1 px-2.5 rounded border border-transparent hover:border-[#212734] hover:bg-[#12161f]"
           >
             <ShieldAlert className="w-3.5 h-3.5 text-slate-400" />
-            <span>AnimeGabar Admin</span>
+            <span>AnimeGabar</span>
           </button>
         </div>
       </footer>

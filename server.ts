@@ -2,7 +2,6 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import dotenv from 'dotenv';
-import { createServer as createViteServer } from 'vite';
 import { GoogleGenAI, Type } from '@google/genai';
 
 dotenv.config();
@@ -11,29 +10,71 @@ const app = express();
 const PORT = 3000;
 
 app.use(express.json({ limit: '25mb' }));
+app.use(express.urlencoded({ extended: true, limit: '25mb' }));
 
-// File Storage Paths & Helper Functions with Serverless / Vercel read-only compatibility
-let DATA_DIR = path.join(process.cwd(), 'data');
-if (process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME) {
-  DATA_DIR = path.join('/tmp', 'data');
-}
-const SAVED_SUBS_DIR = path.join(DATA_DIR, 'saved_subtitles');
-const DONATION_CONFIG_FILE = path.join(DATA_DIR, 'donation_config.json');
-const ADMIN_CONFIG_FILE = path.join(DATA_DIR, 'admin_config.json');
-const TELEGRAM_CONFIG_FILE = path.join(DATA_DIR, 'telegram_config.json');
-const USAGE_CONFIG_FILE = path.join(DATA_DIR, 'usage_config.json');
-const SAVED_SUBS_MANIFEST_FILE = path.join(DATA_DIR, 'saved_subtitles_manifest.json');
+// URL Normalizer & CORS middleware for Vercel Serverless / Containers / Proxy
+app.use((req, res, next) => {
+  res.setHeader('Access-Control-Allow-Origin', '*');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, x-admin-password, Authorization');
+  if (req.method === 'OPTIONS') {
+    return res.sendStatus(204);
+  }
+
+  // If path came in without /api prefix (due to Vercel route stripping), normalize it
+  if (req.url && !req.url.startsWith('/api') && !req.url.startsWith('/assets') && !req.url.startsWith('/@') && !req.url.startsWith('/src') && req.url !== '/') {
+    if (
+      req.url.startsWith('/admin') ||
+      req.url.startsWith('/usage') ||
+      req.url.startsWith('/verify') ||
+      req.url.startsWith('/translate') ||
+      req.url.startsWith('/save-subtitle') ||
+      req.url.startsWith('/download')
+    ) {
+      req.url = '/api' + req.url;
+    }
+  }
+  next();
+});
+
+// File Storage Paths & Helper Functions with Serverless / Vercel compatibility
+const REPO_DATA_DIR = path.join(process.cwd(), 'data');
+const IS_SERVERLESS = Boolean(process.env.VERCEL || process.env.AWS_LAMBDA_FUNCTION_NAME);
+const TMP_DATA_DIR = IS_SERVERLESS ? path.join('/tmp', 'data') : REPO_DATA_DIR;
 
 try {
-  if (!fs.existsSync(DATA_DIR)) {
-    fs.mkdirSync(DATA_DIR, { recursive: true });
+  if (!fs.existsSync(TMP_DATA_DIR)) {
+    fs.mkdirSync(TMP_DATA_DIR, { recursive: true });
   }
-  if (!fs.existsSync(SAVED_SUBS_DIR)) {
-    fs.mkdirSync(SAVED_SUBS_DIR, { recursive: true });
+  const subsDir = path.join(TMP_DATA_DIR, 'saved_subtitles');
+  if (!fs.existsSync(subsDir)) {
+    fs.mkdirSync(subsDir, { recursive: true });
   }
 } catch (err) {
   console.warn('Storage directory initialization note:', err);
 }
+
+const SAVED_SUBS_DIR = path.join(TMP_DATA_DIR, 'saved_subtitles');
+
+// Helper to resolve read path: checks /tmp first (for runtime changes), then repo data dir
+function getConfigFileReadPath(filename: string): string {
+  if (IS_SERVERLESS) {
+    const tmpPath = path.join(TMP_DATA_DIR, filename);
+    if (fs.existsSync(tmpPath)) {
+      return tmpPath;
+    }
+  }
+  const repoPath = path.join(REPO_DATA_DIR, filename);
+  if (fs.existsSync(repoPath)) {
+    return repoPath;
+  }
+  return path.join(TMP_DATA_DIR, filename);
+}
+
+function getConfigFileWritePath(filename: string): string {
+  return path.join(TMP_DATA_DIR, filename);
+}
+
 
 const DEFAULT_DONATION = {
   kpayPhone: '09770033353',
@@ -109,8 +150,9 @@ function maskApiKey(key: string): string {
 
 function getDonationConfig() {
   try {
-    if (fs.existsSync(DONATION_CONFIG_FILE)) {
-      const data = fs.readFileSync(DONATION_CONFIG_FILE, 'utf-8');
+    const filePath = getConfigFileReadPath('donation_config.json');
+    if (fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath, 'utf-8');
       return { ...DEFAULT_DONATION, ...JSON.parse(data) };
     }
   } catch (err) {
@@ -122,7 +164,8 @@ function getDonationConfig() {
 function saveDonationConfig(config: any) {
   inMemoryDonation = { ...DEFAULT_DONATION, ...config };
   try {
-    fs.writeFileSync(DONATION_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+    const filePath = getConfigFileWritePath('donation_config.json');
+    fs.writeFileSync(filePath, JSON.stringify(config, null, 2), 'utf-8');
   } catch (err) {
     console.warn('Could not write donation config to disk:', err);
   }
@@ -130,8 +173,9 @@ function saveDonationConfig(config: any) {
 
 function getTelegramConfig() {
   try {
-    if (fs.existsSync(TELEGRAM_CONFIG_FILE)) {
-      const data = fs.readFileSync(TELEGRAM_CONFIG_FILE, 'utf-8');
+    const filePath = getConfigFileReadPath('telegram_config.json');
+    if (fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath, 'utf-8');
       return { ...DEFAULT_TELEGRAM, ...JSON.parse(data) };
     }
   } catch (err) {
@@ -143,7 +187,8 @@ function getTelegramConfig() {
 function saveTelegramConfig(config: any) {
   inMemoryTelegram = { ...DEFAULT_TELEGRAM, ...config };
   try {
-    fs.writeFileSync(TELEGRAM_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+    const filePath = getConfigFileWritePath('telegram_config.json');
+    fs.writeFileSync(filePath, JSON.stringify(config, null, 2), 'utf-8');
   } catch (err) {
     console.warn('Could not write telegram config to disk:', err);
   }
@@ -151,8 +196,9 @@ function saveTelegramConfig(config: any) {
 
 function getAdminConfig() {
   try {
-    if (fs.existsSync(ADMIN_CONFIG_FILE)) {
-      const data = fs.readFileSync(ADMIN_CONFIG_FILE, 'utf-8');
+    const filePath = getConfigFileReadPath('admin_config.json');
+    if (fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath, 'utf-8');
       return { ...DEFAULT_ADMIN, ...JSON.parse(data) };
     }
   } catch (err) {
@@ -164,7 +210,8 @@ function getAdminConfig() {
 function saveAdminConfig(config: any) {
   inMemoryAdmin = { ...DEFAULT_ADMIN, ...config };
   try {
-    fs.writeFileSync(ADMIN_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+    const filePath = getConfigFileWritePath('admin_config.json');
+    fs.writeFileSync(filePath, JSON.stringify(config, null, 2), 'utf-8');
   } catch (err) {
     console.warn('Could not write admin config to disk:', err);
   }
@@ -172,8 +219,9 @@ function saveAdminConfig(config: any) {
 
 function getUsageConfig() {
   try {
-    if (fs.existsSync(USAGE_CONFIG_FILE)) {
-      const data = fs.readFileSync(USAGE_CONFIG_FILE, 'utf-8');
+    const filePath = getConfigFileReadPath('usage_config.json');
+    if (fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath, 'utf-8');
       const parsed = JSON.parse(data);
       const merged = { ...DEFAULT_USAGE, ...parsed };
       if (!Array.isArray(merged.geminiKeyPool)) {
@@ -190,7 +238,8 @@ function getUsageConfig() {
 function saveUsageConfig(config: any) {
   inMemoryUsage = { ...DEFAULT_USAGE, ...config };
   try {
-    fs.writeFileSync(USAGE_CONFIG_FILE, JSON.stringify(config, null, 2), 'utf-8');
+    const filePath = getConfigFileWritePath('usage_config.json');
+    fs.writeFileSync(filePath, JSON.stringify(config, null, 2), 'utf-8');
   } catch (err) {
     console.warn('Could not write usage config to disk:', err);
   }
@@ -241,8 +290,9 @@ function getHealthyKeyCandidates(config: any): any[] {
 
 function getSavedSubsManifest(): any[] {
   try {
-    if (fs.existsSync(SAVED_SUBS_MANIFEST_FILE)) {
-      const data = fs.readFileSync(SAVED_SUBS_MANIFEST_FILE, 'utf-8');
+    const filePath = getConfigFileReadPath('saved_subtitles_manifest.json');
+    if (fs.existsSync(filePath)) {
+      const data = fs.readFileSync(filePath, 'utf-8');
       return JSON.parse(data);
     }
   } catch (err) {
@@ -254,16 +304,30 @@ function getSavedSubsManifest(): any[] {
 function saveSubsManifest(manifest: any[]) {
   inMemoryManifest = manifest;
   try {
-    fs.writeFileSync(SAVED_SUBS_MANIFEST_FILE, JSON.stringify(manifest, null, 2), 'utf-8');
+    const filePath = getConfigFileWritePath('saved_subtitles_manifest.json');
+    fs.writeFileSync(filePath, JSON.stringify(manifest, null, 2), 'utf-8');
   } catch (err) {
     console.warn('Could not write manifest to disk:', err);
   }
 }
 
 function checkAdminAuth(req: express.Request): boolean {
-  const adminPass = getAdminConfig().password;
-  const provided = (req.headers['x-admin-password'] as string) || req.body?.adminPassword || req.query?.adminPassword;
-  return Boolean(provided && provided === adminPass);
+  const adminPass = (getAdminConfig().password || '').trim();
+  const envPass = (process.env.ADMIN_PASSWORD || '').trim();
+  const provided = (
+    (req.headers['x-admin-password'] as string) ||
+    req.body?.adminPassword ||
+    req.query?.adminPassword ||
+    ''
+  ).trim();
+
+  if (!provided) return false;
+
+  return (
+    provided === adminPass ||
+    (Boolean(envPass) && provided === envPass) ||
+    (provided === 'admin123' && (!adminPass || adminPass === 'admin123'))
+  );
 }
 
 // Telegram Helper Function: Send Subtitle Document to Telegram Channel/Chat
@@ -526,12 +590,23 @@ app.post('/api/send-to-telegram', async (req, res) => {
 
 // Admin Authentication APIs
 app.post('/api/admin/verify-login', (req, res) => {
-  const { password } = req.body;
-  const adminPass = getAdminConfig().password;
-  if (password === adminPass) {
+  const { password } = req.body || {};
+  const cleanPass = typeof password === 'string' ? password.trim() : '';
+  const adminPass = (getAdminConfig().password || '').trim();
+  const envPass = (process.env.ADMIN_PASSWORD || '').trim();
+
+  const isMatch =
+    (cleanPass && cleanPass === adminPass) ||
+    (cleanPass && envPass && cleanPass === envPass) ||
+    (cleanPass === 'admin123' && (!adminPass || adminPass === 'admin123'));
+
+  if (isMatch) {
     return res.json({ success: true, message: 'Admin login successful' });
   }
-  return res.status(401).json({ success: false, error: 'Admin စကားဝှက် မှားယွင်းနေပါသည်' });
+  return res.status(401).json({
+    success: false,
+    error: 'Admin စကားဝှက် မှားယွင်းနေပါသည် (Default: admin123)',
+  });
 });
 
 app.post('/api/admin/update-donation-config', (req, res) => {
@@ -1756,6 +1831,7 @@ ${JSON.stringify(items.map((i: any) => ({ id: i.id, text: i.text })))}`;
 // Vite Middleware for dev & static serve for prod
 async function startServer() {
   if (process.env.NODE_ENV !== 'production') {
+    const { createServer: createViteServer } = await import('vite');
     const vite = await createViteServer({
       server: { middlewareMode: true },
       appType: 'spa',
@@ -1769,14 +1845,14 @@ async function startServer() {
     });
   }
 
-  if (process.env.VERCEL !== '1') {
+  if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
     app.listen(PORT, '0.0.0.0', () => {
       console.log(`Server running on http://localhost:${PORT}`);
     });
   }
 }
 
-if (process.env.VERCEL !== '1') {
+if (!process.env.VERCEL && !process.env.AWS_LAMBDA_FUNCTION_NAME) {
   startServer();
 }
 

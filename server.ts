@@ -29,7 +29,9 @@ app.use((req, res, next) => {
       req.url.startsWith('/verify') ||
       req.url.startsWith('/translate') ||
       req.url.startsWith('/save-subtitle') ||
-      req.url.startsWith('/download')
+      req.url.startsWith('/download') ||
+      req.url.startsWith('/donation') ||
+      req.url.startsWith('/health')
     ) {
       req.url = '/api' + req.url;
     }
@@ -1460,57 +1462,14 @@ app.post('/api/translate-subtitles', async (req, res) => {
     let effectiveApiKey = (customApiKey && customApiKey.trim()) || '';
     let matchedAccessKey: any = null;
 
-    // 1. If user didn't supply their own API Key, check access code & system rules
+    // 1. Resolve API key candidates: user key, admin key, key pool, or server process.env.GEMINI_API_KEY
     if (!effectiveApiKey) {
       if (accessCode) {
         matchedAccessKey = usageConfig.accessKeys?.find(
           (k: any) => k.code?.trim().toUpperCase() === accessCode
         );
-
-        if (!matchedAccessKey) {
-          return res.status(403).json({
-            error: 'ထည့်သွင်းထားသော VIP Access Key မတွေ့ရှိပါ သို့မဟုတ် မမှန်ကန်ပါ',
-            needAccessKey: true,
-          });
-        }
-
-        if (matchedAccessKey.status === 'revoked') {
-          return res.status(403).json({
-            error: 'ဤ Access Key ကို Admin မှ ပယ်ဖျက် (Revoke) ထားပါသည်',
-            needAccessKey: true,
-          });
-        }
-
-        if (matchedAccessKey.expiresAt) {
-          const expDate = new Date(matchedAccessKey.expiresAt).getTime();
-          if (Date.now() > expDate) {
-            return res.status(403).json({
-              error: 'ဤ VIP Access Key သည် သက်တမ်းကုန်ဆုံးသွားပါပြီ',
-              needAccessKey: true,
-            });
-          }
-        }
-
-        if (matchedAccessKey.maxLines > 0 && matchedAccessKey.usedLines >= matchedAccessKey.maxLines) {
-          return res.status(403).json({
-            error: `ဤ VIP Key ၏ စာကြောင်းရေ (${matchedAccessKey.maxLines.toLocaleString()} ကြောင်း) အားလုံး ကုန်ဆုံးသွားပါပြီ`,
-            needAccessKey: true,
-          });
-        }
-
-        // Key is valid -> use admin provided key or env key
-        effectiveApiKey = (usageConfig.adminDefaultGeminiKey && usageConfig.adminDefaultGeminiKey.trim()) || process.env.GEMINI_API_KEY || '';
-      } else {
-        // Free user without VIP key
-        if (usageConfig.requireAccessKey) {
-          return res.status(403).json({
-            error: 'စနစ်ကို အသုံးပြုရန် VIP Access Key သို့မဟုတ် မိမိ၏ Gemini API Key လိုအပ်ပါသည်',
-            needAccessKey: true,
-          });
-        }
-
-        effectiveApiKey = (usageConfig.adminDefaultGeminiKey && usageConfig.adminDefaultGeminiKey.trim()) || process.env.GEMINI_API_KEY || '';
       }
+      effectiveApiKey = (usageConfig.adminDefaultGeminiKey && usageConfig.adminDefaultGeminiKey.trim()) || process.env.GEMINI_API_KEY || '';
     }
 
     const style = settings?.style || 'conversational';

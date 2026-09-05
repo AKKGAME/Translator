@@ -1,4 +1,5 @@
 import React, { useState, useEffect } from 'react';
+import { safeParseJson } from '../utils/safeApi';
 import { DonationConfig, TelegramConfig, UsageConfig, AccessKeyItem } from '../types';
 import {
   testTelegramConnection,

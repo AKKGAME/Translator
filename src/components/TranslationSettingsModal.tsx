@@ -4,29 +4,17 @@ import {
   Settings,
   Sparkles,
   X,
-  Check,
   Languages,
   Film,
-  Key,
-  KeyRound,
-  Crown,
-  Zap,
   MessageSquare,
   BookOpen,
   Volume2,
-  AlertCircle,
-  ExternalLink,
-  RefreshCw,
-  Eye,
-  EyeOff,
   UserCheck,
-  UserX,
   Globe,
   Tag,
+  Plus,
   Trash2,
 } from 'lucide-react';
-import { testGeminiApiKey } from '../utils/geminiDirect';
-import { validateAccessKeyLocally, setSavedAccessCode } from '../utils/accessKeyUtils';
 
 interface TranslationSettingsModalProps {
   isOpen: boolean;
@@ -44,76 +32,11 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
   onConfirmAndTranslate,
 }) => {
   const [translationMode, setTranslationMode] = useState<'ai' | 'manual'>('ai');
-  const [showAccessCode, setShowAccessCode] = useState(false);
-  const [isTestingKey, setIsTestingKey] = useState(false);
-  const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
 
   if (!isOpen) return null;
 
   const handleStyleChange = (style: TranslationStyle) => {
     onUpdateSettings({ ...settings, style });
-  };
-
-  const handleTestApiKey = async () => {
-    const keyToTest = settings.customApiKey?.trim();
-    if (!keyToTest) {
-      setTestResult({
-        success: false,
-        message: 'ကျေးဇူးပြု၍ Gemini API Key အရင် ထည့်သွင်းပေးပါ',
-      });
-      return;
-    }
-
-    setIsTestingKey(true);
-    setTestResult(null);
-
-    try {
-      // First try server verification endpoint
-      const res = await fetch('/api/verify-gemini-key', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ apiKey: keyToTest }),
-      });
-
-      const contentType = res.headers.get('content-type') || '';
-      if (res.ok && contentType.includes('application/json')) {
-        const data = await res.json();
-        setTestResult({
-          success: true,
-          message: data.message || 'Gemini API Key မှန်ကန်စွာ ချိတ်ဆက်ပြီးပါပြီ!',
-        });
-      } else {
-        // Fallback to direct client-side test
-        const directRes = await testGeminiApiKey(keyToTest);
-        if (directRes.success) {
-          setTestResult({
-            success: true,
-            message: directRes.message || 'Gemini API Key မှန်ကန်စွာ ချိတ်ဆက်ပြီးပါပြီ!',
-          });
-        } else {
-          setTestResult({
-            success: false,
-            message: directRes.error || 'API Key မှားယွင်းနေပါသည်',
-          });
-        }
-      }
-    } catch (err: any) {
-      // Direct client test fallback
-      const directRes = await testGeminiApiKey(keyToTest);
-      if (directRes.success) {
-        setTestResult({
-          success: true,
-          message: directRes.message || 'Gemini API Key မှန်ကန်စွာ ချိတ်ဆက်ပြီးပါပြီ!',
-        });
-      } else {
-        setTestResult({
-          success: false,
-          message: directRes.error || err.message || 'API Key စစ်ဆေး၍ မရပါ',
-        });
-      }
-    } finally {
-      setIsTestingKey(false);
-    }
   };
 
   const handleConfirmAI = () => {
@@ -125,15 +48,13 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
     onClose();
   };
 
-  const hasApiKey = Boolean(settings.customApiKey && settings.customApiKey.trim().length > 10);
-
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/80 backdrop-blur-sm p-3 sm:p-4 overflow-y-auto">
       <div className="bg-[#0e1219] border border-[#212734] rounded-lg max-w-2xl w-full p-5 sm:p-6 shadow-2xl space-y-5 my-auto max-h-[90vh] overflow-y-auto">
         {/* Header */}
         <div className="flex items-center justify-between border-b border-[#212734] pb-3">
           <div className="flex items-center space-x-2.5">
-            <div className="p-2 bg-emerald-500/10 text-emerald-400 rounded-md border border-emerald-500/20">
+            <div className="p-2 bg-purple-500/10 text-purple-400 rounded-md border border-purple-500/20">
               <Settings className="w-5 h-5" />
             </div>
             <div>
@@ -141,7 +62,7 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
                 <span>ဘာသာပြန် ဆက်တင်များ (Translation Settings)</span>
               </h3>
               <p className="text-xs text-slate-400 mt-0.5">
-                AI ဖြင့် အလိုအလျောက် ဘာသာပြန်မည် သို့မဟုတ် ကိုယ်တိုင် ပြင်ဆင်မည်ကို ရွေးချယ်ပါ
+                AI ဖြင့် အလိုအလျောက် ဘာသာပြန်စတိုင်နှင့် အသုံးအနှုန်း စည်းမျဉ်းများကို သတ်မှတ်ပါ
               </p>
             </div>
           </div>
@@ -160,7 +81,7 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
             onClick={() => setTranslationMode('ai')}
             className={`flex items-center justify-center space-x-2 py-2 px-3 rounded text-xs font-bold transition ${
               translationMode === 'ai'
-                ? 'bg-emerald-500 text-slate-950 shadow-sm'
+                ? 'bg-purple-600 text-white shadow-sm'
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
@@ -185,165 +106,6 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
         {/* Mode 1: AI Translation Settings */}
         {translationMode === 'ai' && (
           <div className="space-y-3.5">
-            {/* 1. Gemini API Key Input (Prominent & First) */}
-            <div className="bg-[#07090e] p-4 rounded-md border border-emerald-500/30 space-y-2.5 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Key className="w-4 h-4 text-emerald-400" />
-                  <label className="text-xs font-bold text-slate-100">
-                    မိမိ၏ Gemini API Key (အခမဲ့ ရယူနိုင်ပါသည်)
-                  </label>
-                </div>
-                {hasApiKey ? (
-                  <span className="text-[10px] bg-emerald-500/15 text-emerald-300 px-2 py-0.5 rounded font-bold border border-emerald-500/30 flex items-center space-x-1">
-                    <Check className="w-3 h-3 text-emerald-400" />
-                    <span>Key ထည့်သွင်းထားပြီး</span>
-                  </span>
-                ) : (
-                  <span className="text-[10px] bg-amber-500/15 text-amber-300 px-2 py-0.5 rounded font-bold border border-amber-500/30 flex items-center space-x-1">
-                    <AlertCircle className="w-3 h-3 text-amber-400" />
-                    <span>Key လိုအပ်ပါသည်</span>
-                  </span>
-                )}
-              </div>
-
-              <div className="relative flex items-center">
-                <input
-                  type={showAccessCode ? 'text' : 'password'}
-                  value={settings.customApiKey || ''}
-                  onChange={(e) => {
-                    const val = e.target.value;
-                    onUpdateSettings({ ...settings, customApiKey: val });
-                    setTestResult(null);
-                  }}
-                  placeholder="AIzaSy... (Google AI Studio Gemini API Key ထည့်ပါ)"
-                  className="w-full bg-[#12161f] border border-[#212734] focus:border-emerald-500 rounded-md pl-3 pr-20 py-2 text-xs font-mono text-slate-100 placeholder:text-slate-600 focus:outline-none"
-                />
-                <div className="absolute right-2 flex items-center space-x-1">
-                  {settings.customApiKey?.trim() && (
-                    <button
-                      type="button"
-                      onClick={() => {
-                        if (window.confirm('ထည့်သွင်းထားသော Gemini API Key ကို ပြန်ဖျက်ရန် သေချာပါသလား?')) {
-                          onUpdateSettings({ ...settings, customApiKey: '' });
-                          localStorage.removeItem('animegabar_custom_api_key');
-                          setTestResult(null);
-                        }
-                      }}
-                      className="p-1 text-slate-400 hover:text-rose-400 hover:bg-rose-500/10 rounded transition"
-                      title="API Key ကို ပြန်ဖျက်မည် (Remove Key)"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                    </button>
-                  )}
-                  <button
-                    type="button"
-                    onClick={() => setShowAccessCode(!showAccessCode)}
-                    className="p-1 text-slate-400 hover:text-slate-200 rounded transition"
-                    title={showAccessCode ? 'ကွယ်မည်' : 'ကြည့်မည်'}
-                  >
-                    {showAccessCode ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                  </button>
-                  <button
-                    type="button"
-                    onClick={handleTestApiKey}
-                    disabled={isTestingKey || !settings.customApiKey?.trim()}
-                    className="px-2 py-1 bg-emerald-500/15 hover:bg-emerald-500/25 text-emerald-300 border border-emerald-500/30 rounded text-[11px] font-bold transition disabled:opacity-40 disabled:pointer-events-none flex items-center space-x-1"
-                  >
-                    {isTestingKey ? (
-                      <>
-                        <RefreshCw className="w-3 h-3 animate-spin text-emerald-400" />
-                        <span>စစ်ဆေးနေ...</span>
-                      </>
-                    ) : (
-                      <span>စစ်ဆေးမည်</span>
-                    )}
-                  </button>
-                </div>
-              </div>
-
-              {testResult && (
-                <div
-                  className={`p-2.5 rounded-md text-xs flex items-center space-x-2 border ${
-                    testResult.success
-                      ? 'bg-emerald-950/40 border-emerald-500/40 text-emerald-300'
-                      : 'bg-rose-950/40 border-rose-500/40 text-rose-300'
-                  }`}
-                >
-                  {testResult.success ? (
-                    <Check className="w-4 h-4 text-emerald-400 flex-shrink-0" />
-                  ) : (
-                    <AlertCircle className="w-4 h-4 text-rose-400 flex-shrink-0" />
-                  )}
-                  <span>{testResult.message}</span>
-                </div>
-              )}
-
-              <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between text-[11px] text-slate-400 pt-1 gap-2 border-t border-[#212734]">
-                <span>Google AI Studio တွင် အခမဲ့ (Free API Key) ရယူနိုင်ပါသည်:</span>
-                <a
-                  href="https://aistudio.google.com/app/apikey"
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center space-x-1 text-emerald-400 hover:text-emerald-300 font-bold underline whitespace-nowrap"
-                >
-                  <span>API Key ရယူရန် (aistudio.google.com)</span>
-                  <ExternalLink className="w-3 h-3 ml-0.5" />
-                </a>
-              </div>
-            </div>
-
-            {/* VIP Access Code Option */}
-            <div className="bg-[#07090e] p-4 rounded-md border border-amber-500/30 space-y-2 shadow-sm">
-              <div className="flex items-center justify-between">
-                <div className="flex items-center space-x-2">
-                  <Crown className="w-4 h-4 text-amber-400" />
-                  <label className="text-xs font-bold text-slate-100">
-                    VIP Access Key (Admin မှ ထုတ်ပေးထားသော Key)
-                  </label>
-                </div>
-                {settings.accessCode?.trim() ? (
-                  <span className="text-[10px] bg-amber-500/15 text-amber-300 px-2 py-0.5 rounded font-bold border border-amber-500/30 flex items-center space-x-1">
-                    <Check className="w-3 h-3 text-amber-400" />
-                    <span>VIP Key ထည့်ထားသည်</span>
-                  </span>
-                ) : (
-                  <span className="text-[10px] text-slate-500">Option</span>
-                )}
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <input
-                  type="text"
-                  value={settings.accessCode || ''}
-                  onChange={(e) => {
-                    const code = e.target.value.toUpperCase();
-                    onUpdateSettings({ ...settings, accessCode: code });
-                    setSavedAccessCode(code);
-                  }}
-                  placeholder="e.g. AG-VIP-8842"
-                  className="flex-1 bg-[#12161f] border border-[#212734] focus:border-amber-500 rounded-md px-3 py-1.5 text-xs font-mono text-amber-200 placeholder:text-slate-600 focus:outline-none uppercase"
-                />
-                {settings.accessCode?.trim() && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      if (window.confirm('ထည့်သွင်းထားသော VIP Access Key ကို ဖယ်ရှား/ဖျက်ပစ်ရန် သေချာပါသလား?')) {
-                        onUpdateSettings({ ...settings, accessCode: '' });
-                        setSavedAccessCode('');
-                      }
-                    }}
-                    className="p-2 text-slate-400 hover:text-rose-400 bg-[#12161f] hover:bg-rose-500/10 border border-[#212734] hover:border-rose-500/30 rounded-md transition"
-                    title="VIP Key ကို ပြန်ဖျက်မည် (Remove VIP)"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
-                )}
-              </div>
-              <p className="text-[11px] text-slate-400">
-                Admin ထံမှ ရရှိထားသော VIP Key ရှိပါက ထည့်သွင်း၍ ကန့်သတ်ချက်မရှိ ဘာသာပြန်နိုင်ပါသည်။
-              </p>
-            </div>
 
             {/* 2. Speaker Name Handling (ဘယ်သူပြောလဲ အမည်ဖြုတ်မလား/ထားမလား) */}
             <div className="bg-[#07090e] p-4 rounded-md border border-indigo-500/30 space-y-2.5 shadow-sm">

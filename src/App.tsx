@@ -1,47 +1,101 @@
-import React, { useState, useRef, useEffect } from 'react';
-import { ShieldAlert } from 'lucide-react';
+import React, { useState, useRef, useEffect, useCallback } from 'react';
 import {
   SubtitleItem,
   SubtitleFileMeta,
   TranslationSettings,
   VideoConfig,
   UsageConfig,
-  UserAccessStatus,
 } from './types';
 import { parseSubtitles, msToTimeSRT } from './utils/subtitleParser';
 import { DEFAULT_GLOSSARY_TERMS } from './utils/burmeseUtils';
-import { Header } from './components/Header';
-import { FileUploader } from './components/FileUploader';
-import { SubtitleTable } from './components/SubtitleTable';
-import { VideoPreview } from './components/VideoPreview';
+import { StudioHeader, DisplayMode } from './components/StudioHeader';
+import { StudioWorkspace } from './components/StudioWorkspace';
+import { StudioTimeline } from './components/StudioTimeline';
+import { KeyboardShortcutsModal } from './components/KeyboardShortcutsModal';
 import { TranslationSettingsModal } from './components/TranslationSettingsModal';
 import { TimeOffsetModal } from './components/TimeOffsetModal';
 import { ExportModal } from './components/ExportModal';
 import { DonationModal } from './components/DonationModal';
 import { AdminPanel } from './components/AdminPanel';
-import { AccessLimitExceededModal } from './components/AccessLimitExceededModal';
 import { translateDirectlyViaGemini } from './utils/geminiDirect';
 import {
   getLocalUsageConfig,
   getSavedAccessCode,
-  setSavedAccessCode,
-  evaluateUserAccessStatus,
-  incrementFreeUsageToday,
 } from './utils/accessKeyUtils';
 
 export default function App() {
+  // Starts clean and empty ready for real user workflow
   const [items, setItems] = useState<SubtitleItem[]>([]);
   const [meta, setMeta] = useState<SubtitleFileMeta | null>(null);
-  const [activeTab, setActiveTab] = useState<'subtitles' | 'video' | 'admin'>('subtitles');
-  const [activeSubIndex, setActiveSubIndex] = useState<number | undefined>(undefined);
+
+  // Undo / Redo History
+  const [history, setHistory] = useState<SubtitleItem[][]>(() => [[]]);
+  const [historyIndex, setHistoryIndex] = useState<number>(0);
+
+  const pushHistory = useCallback((newItems: SubtitleItem[]) => {
+    setHistory((prev) => {
+      const next = prev.slice(0, historyIndex + 1);
+      next.push([...newItems]);
+      if (next.length > 30) next.shift();
+      return next;
+    });
+    setHistoryIndex((prev) => prev + 1);
+  }, [historyIndex]);
+
+  const handleUndo = useCallback(() => {
+    if (historyIndex > 0) {
+      const target = history[historyIndex - 1];
+      setHistoryIndex(historyIndex - 1);
+      setItems([...target]);
+    }
+  }, [historyIndex, history]);
+
+  const handleRedo = useCallback(() => {
+    if (historyIndex < history.length - 1) {
+      const target = history[historyIndex + 1];
+      setHistoryIndex(historyIndex + 1);
+      setItems([...target]);
+    }
+  }, [historyIndex, history]);
+
+  // Active view: 'studio' | 'admin'
+  const [activeTab, setActiveTab] = useState<'studio' | 'admin'>('studio');
+
+  // Display Mode: 'main' (red pill) is default
+  const [displayMode, setDisplayMode] = useState<DisplayMode>('main');
+  const [targetLanguage, setTargetLanguage] = useState<string>('Myanmar (Burmese)');
+
+  // Playback state
+  const [currentTimeMs, setCurrentTimeMs] = useState<number>(0);
+  const [durationSec, setDurationSec] = useState<number>(0);
+  const [isPlaying, setIsPlaying] = useState<boolean>(false);
+
+  // Custom uploaded video support
+  const [customVideoUrl, setCustomVideoUrl] = useState<string | null>(null);
+  const [customVideoFileName, setCustomVideoFileName] = useState<string | null>(null);
+
+  // Modals
+  const [isShortcutsOpen, setIsShortcutsOpen] = useState(false);
   const [isDonationModalOpen, setIsDonationModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
-  const [isLimitModalOpen, setIsLimitModalOpen] = useState(false);
+  const [isExportOpen, setIsExportOpen] = useState(false);
+  const [isShiftOpen, setIsShiftOpen] = useState(false);
 
-  // Usage Config & Access Status
+  // Translation State & Progress
+  const [isTranslating, setIsTranslating] = useState(false);
+  const [translationProgress, setTranslationProgress] = useState<{ current: number; total: number } | undefined>(
+    undefined
+  );
+  const isCancelledRef = useRef(false);
+
+  // Hidden file input refs
+  const subtitleInputRef = useRef<HTMLInputElement>(null);
+  const videoInputRef = useRef<HTMLInputElement>(null);
+
+  // Usage Config
   const [usageConfig, setUsageConfig] = useState<UsageConfig>(() => getLocalUsageConfig());
 
-  // Video Player Configuration
+  // Video subtitle configuration
   const [videoConfig, setVideoConfig] = useState<VideoConfig>({
     videoUrl: 'https://www.w3schools.com/html/mov_bbb.mp4',
     isCustomVideo: false,
@@ -92,82 +146,47 @@ export default function App() {
     };
   });
 
-  // Access status calculation
-  const accessStatus: UserAccessStatus = evaluateUserAccessStatus(
-    translationSettings.customApiKey,
-    translationSettings.accessCode,
-    usageConfig
-  );
+  // Active Subtitle Item: find by current playback timestamp (null if no subtitle at currentTimeMs)
+  const activeItem: SubtitleItem | null =
+    items.find((it) => currentTimeMs >= it.startMs && currentTimeMs <= it.endMs) || null;
 
-  // Fetch server donation config, telegram config & usage config on mount
+  // Playback timer loop
   useEffect(() => {
-    fetch('/api/donation-config')
-      .then((res) => {
-        if (!res.ok) return null;
-        const contentType = res.headers.get('content-type');
-        if (!contentType || !contentType.includes('application/json')) return null;
-        return res.json();
-      })
-      .then((data) => {
-        if (data && data.kpayPhone) {
-          setTranslationSettings((prev) => ({
-            ...prev,
-            donationConfig: data,
-          }));
+    if (!isPlaying) return;
+    let lastTime = performance.now();
+    let animId: number;
+
+    const tick = (now: number) => {
+      const delta = now - lastTime;
+      lastTime = now;
+      setCurrentTimeMs((prev) => {
+        const maxMs = (durationSec || 1437) * 1000;
+        const nextMs = prev + delta;
+        if (nextMs >= maxMs) {
+          setIsPlaying(false);
+          return 0;
         }
-      })
-      .catch(() => {});
+        return nextMs;
+      });
+      animId = requestAnimationFrame(tick);
+    };
 
-    fetch('/api/usage-status?code=' + encodeURIComponent(translationSettings.accessCode || ''))
-      .then((res) => (res.ok ? res.json() : null))
-      .then((data) => {
-        if (data && data.usageConfig) {
-          setUsageConfig(data.usageConfig);
-        }
-      })
-      .catch(() => {});
-  }, [translationSettings.accessCode]);
+    animId = requestAnimationFrame(tick);
+    return () => cancelAnimationFrame(animId);
+  }, [isPlaying, durationSec]);
 
-  const handleUpdateSettings = (newSettings: TranslationSettings) => {
-    setTranslationSettings(newSettings);
-    if (typeof window !== 'undefined') {
-      if (newSettings.customApiKey !== undefined) {
-        localStorage.setItem('user_gemini_api_key', newSettings.customApiKey.trim());
-      }
-      if (newSettings.donationConfig) {
-        localStorage.setItem('user_donation_config', JSON.stringify(newSettings.donationConfig));
-      }
-    }
-  };
-
-  // UI Modals
-  const [isTranslating, setIsTranslating] = useState(false);
-  const [isExportOpen, setIsExportOpen] = useState(false);
-  const [isShiftOpen, setIsShiftOpen] = useState(false);
-
-  // Handle Load Subtitle File
-  const handleFileLoaded = (content: string, filename: string) => {
-    const parsed = parseSubtitles(content, filename);
-    setItems(parsed.items);
-    setMeta({
-      fileName: filename,
-      format: parsed.format,
-      totalItems: parsed.items.length,
-      durationMs: parsed.items.length > 0 ? parsed.items[parsed.items.length - 1].endMs : 0,
+  // Subtitle Item Operations
+  const handleUpdateItem = useCallback((id: number, updatedFields: Partial<SubtitleItem>) => {
+    setItems((prev) => {
+      const updated = prev.map((item) =>
+        item.id === id ? { ...item, ...updatedFields } : item
+      );
+      pushHistory(updated);
+      return updated;
     });
-    setActiveTab('subtitles');
-    setIsSettingsModalOpen(true);
-  };
+  }, [pushHistory]);
 
-  // Update Single Subtitle Item
-  const handleUpdateItem = (id: number, updatedFields: Partial<SubtitleItem>) => {
-    setItems((prev) =>
-      prev.map((item) => (item.id === id ? { ...item, ...updatedFields } : item))
-    );
-  };
-
-  // Add new subtitle item
-  const handleAddItem = (afterItemId?: number, startMsOverride?: number) => {
+  const handleAddItem = useCallback((afterItemId?: number, startMsOverride?: number) => {
     setItems((prev) => {
       let newStart = 0;
       let insertIndex = prev.length;
@@ -194,28 +213,29 @@ export default function App() {
         endTime: msToTimeSRT(newEnd),
         startMs: newStart,
         endMs: newEnd,
-        originalText: 'New Subtitle',
+        originalText: 'New Subtitle line',
         translatedText: '',
         status: 'pending',
       };
 
       const updated = [...prev];
       updated.splice(insertIndex, 0, newItem);
-
-      return updated.map((item, idx) => ({ ...item, index: idx + 1 }));
+      const reindexed = updated.map((item, idx) => ({ ...item, index: idx + 1 }));
+      pushHistory(reindexed);
+      return reindexed;
     });
-  };
+  }, [pushHistory]);
 
-  // Delete subtitle item
-  const handleDeleteItem = (id: number) => {
+  const handleDeleteItem = useCallback((id: number) => {
     setItems((prev) => {
       const filtered = prev.filter((i) => i.id !== id);
-      return filtered.map((item, idx) => ({ ...item, index: idx + 1 }));
+      const reindexed = filtered.map((item, idx) => ({ ...item, index: idx + 1 }));
+      pushHistory(reindexed);
+      return reindexed;
     });
-  };
+  }, [pushHistory]);
 
-  // Merge subtitle item with next item
-  const handleMergeItem = (id: number) => {
+  const handleMergeItem = useCallback((id: number) => {
     setItems((prev) => {
       const idx = prev.findIndex((i) => i.id === id);
       if (idx === -1 || idx >= prev.length - 1) return prev;
@@ -244,438 +264,619 @@ export default function App() {
 
       const updated = [...prev];
       updated.splice(idx, 2, mergedItem);
+      const reindexed = updated.map((item, i) => ({ ...item, index: i + 1 }));
+      pushHistory(reindexed);
+      return reindexed;
+    });
+  }, [pushHistory]);
 
-      return updated.map((item, i) => ({ ...item, index: i + 1 }));
+  // Split Subtitle at Playhead
+  const handleSplitItem = useCallback((id: number) => {
+    setItems((prev) => {
+      const idx = prev.findIndex((i) => i.id === id);
+      if (idx === -1) return prev;
+      const item = prev[idx];
+
+      let splitMs = currentTimeMs;
+      if (splitMs <= item.startMs + 300 || splitMs >= item.endMs - 300) {
+        splitMs = Math.round(item.startMs + (item.endMs - item.startMs) / 2);
+      }
+
+      const origWords = item.originalText.trim().split(/\s+/);
+      const midOrig = Math.max(1, Math.ceil(origWords.length / 2));
+      const firstOrig = origWords.slice(0, midOrig).join(' ');
+      const secondOrig = origWords.slice(midOrig).join(' ') || firstOrig;
+
+      let firstTrans = '';
+      let secondTrans = '';
+      if (item.translatedText) {
+        const transWords = item.translatedText.trim().split(/\s+/);
+        const midTrans = Math.max(1, Math.ceil(transWords.length / 2));
+        firstTrans = transWords.slice(0, midTrans).join(' ');
+        secondTrans = transWords.slice(midTrans).join(' ') || firstTrans;
+      }
+
+      const firstItem: SubtitleItem = {
+        ...item,
+        endMs: splitMs,
+        endTime: msToTimeSRT(splitMs),
+        originalText: firstOrig,
+        translatedText: firstTrans,
+      };
+
+      const secondItem: SubtitleItem = {
+        id: Date.now() + Math.floor(Math.random() * 1000),
+        index: item.index + 1,
+        startMs: splitMs + 10,
+        endMs: item.endMs,
+        startTime: msToTimeSRT(splitMs + 10),
+        endTime: msToTimeSRT(item.endMs),
+        originalText: secondOrig,
+        translatedText: secondTrans,
+        status: secondTrans ? 'completed' : 'pending',
+      };
+
+      const updated = [...prev];
+      updated.splice(idx, 1, firstItem, secondItem);
+      const reindexed = updated.map((it, i) => ({ ...it, index: i + 1 }));
+      pushHistory(reindexed);
+      return reindexed;
+    });
+  }, [currentTimeMs, pushHistory]);
+
+  // Single Line AI Translation
+  const handleTranslateSingleItem = useCallback(async (item: SubtitleItem) => {
+    setItems((prev) =>
+      prev.map((it) => (it.id === item.id ? { ...it, status: 'translating' } : it))
+    );
+    try {
+      const payload = {
+        items: [{ id: item.id, text: item.originalText }],
+        apiKey: translationSettings.customApiKey,
+        accessCode: translationSettings.accessCode,
+        settings: {
+          style: translationSettings.style,
+          tone: translationSettings.tone,
+          glossary: translationSettings.glossary,
+          preserveTags: translationSettings.preserveTags,
+          useBurmeseDigits: translationSettings.useBurmeseDigits,
+          speakerNameHandling: translationSettings.speakerNameHandling,
+          properNounsMode: translationSettings.properNounsMode,
+          soundEffectsHandling: translationSettings.soundEffectsHandling,
+          honorificStyle: translationSettings.honorificStyle,
+          conciseness: translationSettings.conciseness,
+          customPromptNote: translationSettings.customPromptNote,
+        },
+      };
+
+      let transResult = '';
+      try {
+        const res = await fetch('/api/translate-subtitles', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          transResult = data.translations?.[0]?.translatedText || '';
+        } else {
+          const d = await translateDirectlyViaGemini(
+            payload.items,
+            translationSettings.customApiKey || '',
+            translationSettings
+          );
+          transResult = d?.[0]?.translatedText || '';
+        }
+      } catch {
+        const d = await translateDirectlyViaGemini(
+          payload.items,
+          translationSettings.customApiKey || '',
+          translationSettings
+        );
+        transResult = d?.[0]?.translatedText || '';
+      }
+
+      if (transResult) {
+        setItems((prev) => {
+          const updated = prev.map((it) =>
+            it.id === item.id
+              ? { ...it, translatedText: transResult, status: 'completed' }
+              : it
+          );
+          pushHistory(updated);
+          return updated;
+        });
+      } else {
+        setItems((prev) =>
+          prev.map((it) =>
+            it.id === item.id ? { ...it, status: 'error', errorMessage: 'Failed' } : it
+          )
+        );
+      }
+    } catch {
+      setItems((prev) =>
+        prev.map((it) =>
+          it.id === item.id ? { ...it, status: 'error', errorMessage: 'Failed' } : it
+        )
+      );
+    }
+  }, [translationSettings, pushHistory]);
+
+  // Keyboard Shortcuts Listener
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      const target = e.target as HTMLElement;
+      if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        if (e.key === 'Escape') target.blur();
+        return;
+      }
+
+      if (e.code === 'Space') {
+        e.preventDefault();
+        setIsPlaying((prev) => !prev);
+      } else if (e.code === 'ArrowLeft') {
+        e.preventDefault();
+        setCurrentTimeMs((prev) => Math.max(0, prev - 3000));
+      } else if (e.code === 'ArrowRight') {
+        e.preventDefault();
+        setCurrentTimeMs((prev) => Math.min((durationSec || 1437) * 1000, prev + 3000));
+      } else if (e.code === 'ArrowUp') {
+        e.preventDefault();
+        if (activeItem) {
+          const idx = items.findIndex((i) => i.id === activeItem.id);
+          if (idx > 0) {
+            setCurrentTimeMs(items[idx - 1].startMs);
+          }
+        }
+      } else if (e.code === 'ArrowDown') {
+        e.preventDefault();
+        if (activeItem) {
+          const idx = items.findIndex((i) => i.id === activeItem.id);
+          if (idx < items.length - 1) {
+            setCurrentTimeMs(items[idx + 1].startMs);
+          }
+        }
+      } else if (e.altKey && e.key === '[') {
+        e.preventDefault();
+        // Alt + [ : Set start time of active item to currentTimeMs
+        if (activeItem) {
+          handleUpdateItem(activeItem.id, {
+            startMs: currentTimeMs,
+            startTime: msToTimeSRT(currentTimeMs),
+          });
+        }
+      } else if (e.altKey && e.key === ']') {
+        e.preventDefault();
+        // Alt + ] : Set end time of active item to currentTimeMs
+        if (activeItem) {
+          handleUpdateItem(activeItem.id, {
+            endMs: currentTimeMs,
+            endTime: msToTimeSRT(currentTimeMs),
+          });
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        // Ctrl + K : Split subtitle at playhead
+        if (activeItem) {
+          handleSplitItem(activeItem.id);
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          handleRedo();
+        } else {
+          handleUndo();
+        }
+      } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
+        e.preventDefault();
+        handleRedo();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [
+    isPlaying,
+    durationSec,
+    activeItem,
+    items,
+    currentTimeMs,
+    handleUndo,
+    handleRedo,
+    handleUpdateItem,
+    handleSplitItem,
+  ]);
+
+  // Load Subtitle File from User
+  const handleFileLoaded = (content: string, filename: string) => {
+    const parsed = parseSubtitles(content, filename);
+    if (parsed.items.length > 0) {
+      setItems(parsed.items);
+      pushHistory(parsed.items);
+      const lastEnd = parsed.items[parsed.items.length - 1].endMs;
+      setDurationSec(Math.max(60, Math.ceil(lastEnd / 1000)));
+      setCurrentTimeMs(parsed.items[0].startMs);
+      setMeta({
+        fileName: filename,
+        format: parsed.format,
+        totalItems: parsed.items.length,
+        durationMs: lastEnd,
+      });
+    }
+  };
+
+  const handleFileInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const text = ev.target?.result as string;
+      if (text) handleFileLoaded(text, file.name);
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  // Video File Upload
+  const handleVideoUpload = (file: File) => {
+    if (customVideoUrl) {
+      URL.revokeObjectURL(customVideoUrl);
+    }
+    const url = URL.createObjectURL(file);
+    setCustomVideoUrl(url);
+    setCustomVideoFileName(file.name);
+  };
+
+  const handleVideoInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (file) handleVideoUpload(file);
+    e.target.value = '';
+  };
+
+  // Clear only translations
+  const handleClearTranslations = useCallback(() => {
+    setItems((prev) => {
+      const updated = prev.map((item) => ({
+        ...item,
+        translatedText: '',
+        status: 'idle' as const,
+      }));
+      pushHistory(updated);
+      return updated;
+    });
+  }, [pushHistory]);
+
+  // Clear all items (fresh start)
+  const handleClearAllItems = useCallback(() => {
+    setItems([]);
+    pushHistory([]);
+    setMeta(null);
+    setCurrentTimeMs(0);
+    setDurationSec(0);
+  }, [pushHistory]);
+
+  // Re-index all subtitles 1..N
+  const handleReindexItems = useCallback(() => {
+    setItems((prev) => {
+      const sorted = [...prev].sort((a, b) => a.startMs - b.startMs);
+      const reindexed = sorted.map((item, i) => ({ ...item, index: i + 1 }));
+      pushHistory(reindexed);
+      return reindexed;
+    });
+  }, [pushHistory]);
+
+  // Strip HTML tags like <i>, <b>, <font>
+  const handleStripTags = useCallback(() => {
+    setItems((prev) => {
+      const updated = prev.map((item) => ({
+        ...item,
+        originalText: item.originalText.replace(/<[^>]*>/g, '').trim(),
+        translatedText: item.translatedText ? item.translatedText.replace(/<[^>]*>/g, '').trim() : item.translatedText,
+      }));
+      pushHistory(updated);
+      return updated;
+    });
+  }, [pushHistory]);
+
+  // Batch Find & Replace
+  const handleBatchReplace = useCallback((
+    searchTerm: string,
+    replaceTerm: string,
+    targetField: 'both' | 'original' | 'translated',
+    matchCase: boolean
+  ) => {
+    if (!searchTerm) return;
+    setItems((prev) => {
+      const flags = matchCase ? 'g' : 'gi';
+      const escaped = searchTerm.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+      const regex = new RegExp(escaped, flags);
+
+      const updated = prev.map((item) => {
+        let newOrig = item.originalText;
+        let newTrans = item.translatedText;
+
+        if (targetField === 'both' || targetField === 'original') {
+          newOrig = newOrig.replace(regex, replaceTerm);
+        }
+        if (targetField === 'both' || targetField === 'translated') {
+          if (newTrans) {
+            newTrans = newTrans.replace(regex, replaceTerm);
+          }
+        }
+
+        return {
+          ...item,
+          originalText: newOrig,
+          translatedText: newTrans,
+        };
+      });
+
+      pushHistory(updated);
+      return updated;
+    });
+  }, [pushHistory]);
+
+  // New Blank Project
+  const handleNewBlank = () => {
+    const blank: SubtitleItem[] = [
+      {
+        id: 1,
+        index: 1,
+        startTime: '00:00:01.000',
+        endTime: '00:00:04.000',
+        startMs: 1000,
+        endMs: 4000,
+        originalText: 'Hello world',
+        translatedText: 'မင်္ဂလာပါ',
+        status: 'completed',
+      },
+    ];
+    setItems(blank);
+    pushHistory(blank);
+    setCurrentTimeMs(1000);
+    setDurationSec(300);
+    setMeta({
+      fileName: 'new_subtitles.srt',
+      format: 'srt',
+      totalItems: 1,
+      durationMs: 300000,
     });
   };
 
-  const isCancelledRef = useRef(false);
-
-  const handleStopTranslation = () => {
-    isCancelledRef.current = true;
-    setIsTranslating(false);
-  };
-
-  // Batch Translate Subtitles with Gemini Server API
-  const handleTranslateSubtitles = async (onlyPendingOrError: boolean = false) => {
+  // AI Batch Translate
+  const handleStartTranslate = async () => {
     if (items.length === 0 || isTranslating) return;
-
-    // Check user access limit before translation
-    const currentStatus = evaluateUserAccessStatus(
-      translationSettings.customApiKey,
-      translationSettings.accessCode,
-      usageConfig
-    );
-    if (!currentStatus.canTranslate) {
-      setIsLimitModalOpen(true);
-      return;
-    }
 
     isCancelledRef.current = false;
     setIsTranslating(true);
 
-    const batchSize = translationSettings.batchSize || 30;
-    const itemsToTranslate = onlyPendingOrError
-      ? items.filter((i) => i.status !== 'completed' || !i.translatedText)
-      : [...items];
+    const batchSize = translationSettings.batchSize || 25;
+    const itemsToTranslate = items.filter((i) => !i.translatedText || i.status !== 'completed');
+    const targetItems = itemsToTranslate.length > 0 ? itemsToTranslate : [...items];
 
-    if (itemsToTranslate.length === 0) {
-      setIsTranslating(false);
-      return;
-    }
+    setTranslationProgress({ current: 0, total: targetItems.length });
 
-    for (let i = 0; i < itemsToTranslate.length; i += batchSize) {
+    for (let i = 0; i < targetItems.length; i += batchSize) {
       if (isCancelledRef.current) break;
 
-      const chunk = itemsToTranslate.slice(i, i + batchSize);
+      const chunk = targetItems.slice(i, i + batchSize);
 
-      // Mark status as translating
       setItems((prev) =>
-        prev.map((item) =>
-          chunk.some((c) => c.id === item.id)
-            ? { ...item, status: 'translating', errorMessage: undefined }
-            : item
+        prev.map((it) =>
+          chunk.some((c) => c.id === it.id)
+            ? { ...it, status: 'translating', errorMessage: undefined }
+            : it
         )
       );
 
-      let success = false;
-      let attempt = 0;
-      const maxAttempts = 6;
+      try {
+        const payload = {
+          items: chunk.map((item) => ({ id: item.id, text: item.originalText })),
+          apiKey: translationSettings.customApiKey,
+          settings: {
+            style: translationSettings.style,
+            tone: translationSettings.tone,
+            glossary: translationSettings.glossary,
+            preserveTags: translationSettings.preserveTags,
+            useBurmeseDigits: translationSettings.useBurmeseDigits,
+            speakerNameHandling: translationSettings.speakerNameHandling,
+            properNounsMode: translationSettings.properNounsMode,
+            soundEffectsHandling: translationSettings.soundEffectsHandling,
+            honorificStyle: translationSettings.honorificStyle,
+            conciseness: translationSettings.conciseness,
+            customPromptNote: translationSettings.customPromptNote,
+          },
+        };
 
-      while (!success && attempt < maxAttempts && !isCancelledRef.current) {
-        attempt++;
+        let translations: Array<{ id: number; translatedText: string }> = [];
+
         try {
-          const payload = {
-            items: chunk.map((item) => ({
-              id: item.id,
-              text: item.originalText,
-            })),
-            apiKey: translationSettings.customApiKey,
-            accessCode: translationSettings.accessCode,
-            settings: {
-              style: translationSettings.style,
-              tone: translationSettings.tone,
-              glossary: translationSettings.glossary.map((g) => ({
-                original: g.original,
-                target: g.target,
-              })),
-              preserveTags: translationSettings.preserveTags,
-              useBurmeseDigits: translationSettings.useBurmeseDigits,
-              speakerNameHandling: translationSettings.speakerNameHandling,
-              properNounsMode: translationSettings.properNounsMode,
-              soundEffectsHandling: translationSettings.soundEffectsHandling,
-              honorificStyle: translationSettings.honorificStyle,
-              conciseness: translationSettings.conciseness,
-              customPromptNote: translationSettings.customPromptNote,
-            },
-          };
+          const res = await fetch('/api/translate-subtitles', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload),
+          });
 
-          let translations: Array<{ id: number; translatedText: string }> = [];
-
-          try {
-            const res = await fetch('/api/translate-subtitles', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify(payload),
-            });
-
-            if (isCancelledRef.current) break;
-
-            const contentType = res.headers.get('content-type') || '';
-            const isJson = contentType.includes('application/json');
-
-            if (!isJson || res.status === 404) {
-              // Static web host (e.g. Hostinger public_html) without Node server backend
-              translations = await translateDirectlyViaGemini(
-                payload.items,
-                translationSettings.customApiKey || '',
-                translationSettings
-              );
-            } else if (!res.ok) {
-              const errData = await res.json().catch(() => ({}));
-
-              if (res.status === 403 || errData.isLimitExceeded) {
-                setIsLimitModalOpen(true);
-                throw new Error(errData.error || 'အသုံးပြုမှု ကန့်သတ်ချက် ပြည့်သွားပါပြီ (VIP Key သို့မဟုတ် Gemini API Key ထည့်သွင်းပါ)');
-              }
-
-              const isRateLimit = res.status === 429 || errData.isRateLimit;
-              if (isRateLimit) {
-                if (attempt < maxAttempts) {
-                  const waitMs = Math.min(25000, attempt * 5000);
-                  console.warn(`[Free Key Rate Limit] 429 encountered. Waiting ${waitMs / 1000}s...`);
-                  await new Promise((resolve) => setTimeout(resolve, waitMs));
-                  continue;
-                }
-                throw new Error('AI တောင်းဆိုမှု ပမာဏ ပြည့်နေပါသည် (Free API Key ကို သုံးထားပါက ခေတ္တစောင့်ပြီး ပြန်လည်ကြိုးစားပါ)');
-              }
-              throw new Error(errData.error || `Server returned HTTP ${res.status}`);
-            } else {
-              const data = await res.json();
-              translations = data.translations || [];
-            }
-          } catch (fetchErr: any) {
-            if (fetchErr.message && fetchErr.message.includes('ကန့်သတ်ချက်')) {
-              throw fetchErr;
-            }
-            // Network failure or static host without backend
+          if (res.ok) {
+            const data = await res.json();
+            translations = data.translations || [];
+          } else {
             translations = await translateDirectlyViaGemini(
               payload.items,
               translationSettings.customApiKey || '',
               translationSettings
             );
           }
-
-          // Update translated items
-          setItems((prev) =>
-            prev.map((item) => {
-              const match = translations.find((t) => t.id === item.id);
-              if (match) {
-                return {
-                  ...item,
-                  translatedText: match.translatedText,
-                  status: 'completed',
-                  errorMessage: undefined,
-                };
-              }
-              if (chunk.some((c) => c.id === item.id)) {
-                return { ...item, status: 'completed' };
-              }
-              return item;
-            })
+        } catch {
+          translations = await translateDirectlyViaGemini(
+            payload.items,
+            translationSettings.customApiKey || '',
+            translationSettings
           );
-
-          if (currentStatus.tier === 'free') {
-            incrementFreeUsageToday(chunk.length);
-          }
-
-          success = true;
-        } catch (err: any) {
-          console.error(`Batch translation error (attempt ${attempt}/${maxAttempts}):`, err);
-          if (err.message && err.message.includes('ကန့်သတ်ချက်')) {
-            isCancelledRef.current = true;
-            setItems((prev) =>
-              prev.map((item) =>
-                chunk.some((c) => c.id === item.id)
-                  ? { ...item, status: 'error', errorMessage: err.message }
-                  : item
-              )
-            );
-            break;
-          }
-
-          if (attempt < maxAttempts && !isCancelledRef.current) {
-            await new Promise((resolve) => setTimeout(resolve, 4000));
-          } else {
-            setItems((prev) =>
-              prev.map((item) =>
-                chunk.some((c) => c.id === item.id)
-                  ? { ...item, status: 'error', errorMessage: err.message }
-                  : item
-              )
-            );
-          }
         }
-      }
 
-      // Pacing delay (1.5s - 3s) between batch requests to respect Free API limits
-      if (i + batchSize < itemsToTranslate.length && !isCancelledRef.current) {
-        await new Promise((resolve) => setTimeout(resolve, 2000));
+        setItems((prev) =>
+          prev.map((it) => {
+            const match = translations.find((t) => t.id === it.id);
+            if (match) {
+              return {
+                ...it,
+                translatedText: match.translatedText,
+                status: 'completed',
+              };
+            }
+            return it;
+          })
+        );
+
+        setTranslationProgress({
+          current: Math.min(targetItems.length, i + chunk.length),
+          total: targetItems.length,
+        });
+      } catch (err: any) {
+        console.error('Translation error:', err);
       }
     }
 
     setIsTranslating(false);
+    setTranslationProgress(undefined);
   };
-
-  // Translate Single Item on Demand
-  const handleTranslateSingleItem = async (id: number) => {
-    const item = items.find((i) => i.id === id);
-    if (!item) return;
-
-    const currentStatus = evaluateUserAccessStatus(
-      translationSettings.customApiKey,
-      translationSettings.accessCode,
-      usageConfig
-    );
-    if (!currentStatus.canTranslate) {
-      setIsLimitModalOpen(true);
-      return;
-    }
-
-    setItems((prev) =>
-      prev.map((i) => (i.id === id ? { ...i, status: 'translating', errorMessage: undefined } : i))
-    );
-
-    try {
-      let translatedText = '';
-
-      try {
-        const res = await fetch('/api/translate-subtitles', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            items: [{ id: item.id, index: item.index, text: item.originalText }],
-            apiKey: translationSettings.customApiKey,
-            accessCode: translationSettings.accessCode,
-            settings: {
-              style: translationSettings.style,
-              tone: translationSettings.tone,
-              glossary: translationSettings.glossary,
-              preserveTags: translationSettings.preserveTags,
-              useBurmeseDigits: translationSettings.useBurmeseDigits,
-              speakerNameHandling: translationSettings.speakerNameHandling,
-              properNounsMode: translationSettings.properNounsMode,
-              soundEffectsHandling: translationSettings.soundEffectsHandling,
-              honorificStyle: translationSettings.honorificStyle,
-              conciseness: translationSettings.conciseness,
-              customPromptNote: translationSettings.customPromptNote,
-            },
-          }),
-        });
-
-        const contentType = res.headers.get('content-type') || '';
-        if (res.ok && contentType.includes('application/json')) {
-          const data = await res.json();
-          translatedText = data.translations?.[0]?.translatedText || '';
-        } else if (res.status === 403) {
-          setIsLimitModalOpen(true);
-          const errData = await res.json().catch(() => ({}));
-          throw new Error(errData.error || 'အသုံးပြုမှု ကန့်သတ်ချက် ပြည့်သွားပါပြီ');
-        } else {
-          // Fallback to direct client-side translation
-          const fallbackRes = await translateDirectlyViaGemini(
-            [{ id: item.id, text: item.originalText }],
-            translationSettings.customApiKey || '',
-            translationSettings
-          );
-          translatedText = fallbackRes?.[0]?.translatedText || '';
-        }
-      } catch (fetchErr: any) {
-        if (fetchErr.message && fetchErr.message.includes('ကန့်သတ်ချက်')) {
-          throw fetchErr;
-        }
-        // Direct client fallback
-        const fallbackRes = await translateDirectlyViaGemini(
-          [{ id: item.id, text: item.originalText }],
-          translationSettings.customApiKey || '',
-          translationSettings
-        );
-        translatedText = fallbackRes?.[0]?.translatedText || '';
-      }
-
-      if (translatedText) {
-        if (currentStatus.tier === 'free') {
-          incrementFreeUsageToday(1);
-        }
-        setItems((prev) =>
-          prev.map((i) =>
-            i.id === id
-              ? { ...i, translatedText, status: 'completed', errorMessage: undefined }
-              : i
-          )
-        );
-      } else {
-        throw new Error('ဘာသာပြန်ဆို၍ မရပါ');
-      }
-    } catch (err: any) {
-      setItems((prev) =>
-        prev.map((i) =>
-          i.id === id ? { ...i, status: 'error', errorMessage: err.message } : i
-        )
-      );
-    }
-  };
-
-  // Time Shift Handler
-  const handleApplyTimeShift = (updatedItems: SubtitleItem[]) => {
-    setItems(updatedItems);
-  };
-
-  const hasApiKey = Boolean(
-    translationSettings.customApiKey && translationSettings.customApiKey.trim().length > 10
-  );
 
   return (
-    <div className="min-h-screen bg-[#07090e] text-slate-100 flex flex-col font-sans selection:bg-emerald-500/20 selection:text-emerald-300">
-      <Header
-        meta={meta}
-        activeTab={activeTab}
-        setActiveTab={setActiveTab}
-        onUploadClick={() => {
-          setMeta(null);
-          setItems([]);
-        }}
-        onExportClick={() => setIsExportOpen(true)}
-        onTimeShiftClick={() => setIsShiftOpen(true)}
-        onDonateClick={() => setIsDonationModalOpen(true)}
-        hasApiKey={hasApiKey}
-        onSettingsClick={() => setIsSettingsModalOpen(true)}
-        accessStatus={accessStatus}
-        onOpenAccessModal={() => setIsLimitModalOpen(true)}
+    <div className="h-screen w-screen bg-[#07080e] text-slate-100 flex flex-col overflow-hidden font-sans select-none">
+      {/* Hidden File Inputs */}
+      <input
+        type="file"
+        ref={subtitleInputRef}
+        onChange={handleFileInputChange}
+        accept=".srt,.vtt,.txt"
+        className="hidden"
+      />
+      <input
+        type="file"
+        ref={videoInputRef}
+        onChange={handleVideoInputChange}
+        accept="video/*,.mkv,.mp4,.webm"
+        className="hidden"
       />
 
-      <main className="flex-1 pb-12">
-        {activeTab === 'admin' ? (
+      {/* Top Studio Header */}
+      <StudioHeader
+        displayMode={displayMode}
+        onSelectDisplayMode={setDisplayMode}
+        targetLanguage={targetLanguage}
+        onSelectTargetLanguage={setTargetLanguage}
+        onStartTranslate={handleStartTranslate}
+        onCancelTranslate={() => {
+          isCancelledRef.current = true;
+          setIsTranslating(false);
+        }}
+        isTranslating={isTranslating}
+        translationProgress={translationProgress}
+        onExportClick={() => setIsExportOpen(true)}
+        onUploadSubtitleClick={() => subtitleInputRef.current?.click()}
+        onUploadVideoClick={() => videoInputRef.current?.click()}
+        onNewSubtitleClick={handleNewBlank}
+        onUndo={handleUndo}
+        onRedo={handleRedo}
+        canUndo={historyIndex > 0}
+        canRedo={historyIndex < history.length - 1}
+        onOpenShortcuts={() => setIsShortcutsOpen(true)}
+        onOpenSettings={() => setIsSettingsModalOpen(true)}
+        onOpenAdmin={() => setActiveTab(activeTab === 'admin' ? 'studio' : 'admin')}
+        onOpenDonate={() => setIsDonationModalOpen(true)}
+        hasSubtitles={items.length > 0}
+      />
+
+      {/* Main Studio Body: Workspace + Bottom Timeline */}
+      {activeTab === 'admin' ? (
+        <div className="flex-1 overflow-y-auto bg-[#090b12]">
           <AdminPanel
-            onBackToUserPanel={() => setActiveTab('subtitles')}
+            onBackToUserPanel={() => setActiveTab('studio')}
             onUpdateDonationConfig={(cfg) =>
               setTranslationSettings((prev) => ({ ...prev, donationConfig: cfg }))
             }
             currentDonationConfig={translationSettings.donationConfig}
           />
-        ) : !meta ? (
-          <FileUploader
-            onFileLoaded={handleFileLoaded}
-          />
-        ) : (
-          <>
-            {activeTab === 'subtitles' && (
-              <SubtitleTable
-                items={items}
-                onUpdateItem={handleUpdateItem}
-                onAddItem={handleAddItem}
-                onDeleteItem={handleDeleteItem}
-                onMergeItem={handleMergeItem}
-                onTranslateItem={handleTranslateSingleItem}
-                onTranslateAll={handleTranslateSubtitles}
-                onStopTranslation={handleStopTranslation}
-                isTranslating={isTranslating}
-                activeItemIndex={activeSubIndex}
-                onSelectSubItem={(item) => setActiveSubIndex(item.index)}
-                onOpenSettings={() => setIsSettingsModalOpen(true)}
-                hasApiKey={hasApiKey}
-              />
-            )}
-
-            {activeTab === 'video' && (
-              <VideoPreview
-                items={items}
-                videoConfig={videoConfig}
-                onUpdateVideoConfig={setVideoConfig}
-                onSelectSubItem={(item) => setActiveSubIndex(item.index)}
-                onUpdateItem={handleUpdateItem}
-                onAddItem={handleAddItem}
-                onDeleteItem={handleDeleteItem}
-                onMergeItem={handleMergeItem}
-                onTimeShiftClick={() => setIsShiftOpen(true)}
-              />
-            )}
-          </>
-        )}
-      </main>
-
-      {/* Footer */}
-      <footer className="border-t border-[#212734] bg-[#0e1219] py-3.5 px-4 sm:px-6 text-xs text-slate-400">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-2">
-          <p className="text-center sm:text-left text-[11px] text-slate-400">
-            မြန်မာ ဗီဒီယိုစာတန်းထိုး AI ဘာသာပြန်အက်ပ် - Powered by AnimeGabar
-          </p>
-          <button
-            onClick={() => setActiveTab('admin')}
-            className="text-[11px] text-slate-400 hover:text-emerald-400 transition flex items-center space-x-1.5 py-1 px-2.5 rounded border border-transparent hover:border-[#212734] hover:bg-[#12161f]"
-          >
-            <ShieldAlert className="w-3.5 h-3.5 text-slate-400" />
-            <span>AnimeGabar</span>
-          </button>
         </div>
-      </footer>
+      ) : (
+        <div className="flex-1 flex flex-col overflow-hidden">
+          {/* Upper Section: Split View Video & Subtitle Table */}
+          <StudioWorkspace
+            items={items}
+            videoConfig={videoConfig}
+            onUpdateVideoConfig={setVideoConfig}
+            translationSettings={translationSettings}
+            onUpdateTranslationSettings={setTranslationSettings}
+            displayMode={displayMode}
+            currentTimeMs={currentTimeMs}
+            durationSec={durationSec}
+            isPlaying={isPlaying}
+            onTogglePlay={() => setIsPlaying(!isPlaying)}
+            onSeek={(ms) => setCurrentTimeMs(ms)}
+            activeItem={activeItem}
+            onSelectSubItem={(it) => setCurrentTimeMs(it.startMs)}
+            onUpdateItem={handleUpdateItem}
+            onAddItem={handleAddItem}
+            onDeleteItem={handleDeleteItem}
+            onMergeItem={handleMergeItem}
+            onSplitItem={handleSplitItem}
+            onTranslateSingleItem={handleTranslateSingleItem}
+            onOpenTimeShift={() => setIsShiftOpen(true)}
+            onUploadVideo={handleVideoUpload}
+            customVideoUrl={customVideoUrl}
+            customVideoFileName={customVideoFileName}
+            onUploadSubtitle={(file) => {
+              const reader = new FileReader();
+              reader.onload = (ev) => {
+                const text = ev.target?.result as string;
+                if (text) handleFileLoaded(text, file.name);
+              };
+              reader.readAsText(file);
+            }}
+            onClearTranslations={handleClearTranslations}
+            onClearAllItems={handleClearAllItems}
+            onReindexItems={handleReindexItems}
+            onStripTags={handleStripTags}
+            onBatchReplace={handleBatchReplace}
+            onNewSubtitle={handleNewBlank}
+          />
 
-      {/* Access Limit Exceeded / Key Entry Modal */}
-      <AccessLimitExceededModal
-        isOpen={isLimitModalOpen}
-        onClose={() => setIsLimitModalOpen(false)}
-        accessStatus={accessStatus}
-        usageConfig={usageConfig}
-        onSaveAccessCode={(code) => {
-          setSavedAccessCode(code);
-          setTranslationSettings((prev) => ({ ...prev, accessCode: code }));
-          fetch('/api/usage-status?code=' + encodeURIComponent(code))
-            .then((res) => (res.ok ? res.json() : null))
-            .then((data) => {
-              if (data && data.usageConfig) setUsageConfig(data.usageConfig);
-            })
-            .catch(() => {});
-        }}
-        onSaveCustomApiKey={(key) => {
-          localStorage.setItem('user_gemini_api_key', key);
-          setTranslationSettings((prev) => ({ ...prev, customApiKey: key }));
-        }}
-        onOpenDonateModal={() => {
-          setIsLimitModalOpen(false);
-          setIsDonationModalOpen(true);
-        }}
-        contactTelegram={usageConfig.contactTelegram || '@AnimeGabar'}
+          {/* Bottom Section: Audio Waveform & Multi-Track Subtitle Timeline */}
+          <StudioTimeline
+            items={items}
+            currentTimeMs={currentTimeMs}
+            durationSec={durationSec}
+            activeItem={activeItem}
+            onSeek={(ms) => setCurrentTimeMs(ms)}
+            onSelectSubItem={(it) => setCurrentTimeMs(it.startMs)}
+            onUpdateItem={handleUpdateItem}
+            onSplitAtPlayhead={handleSplitItem}
+            onAddSubtitleAtTime={(timeMs) => handleAddItem(undefined, timeMs)}
+            onMergeItem={handleMergeItem}
+            onDeleteItem={handleDeleteItem}
+            onTranslateSingle={handleTranslateSingleItem}
+            displayMode={displayMode}
+            isPlaying={isPlaying}
+          />
+        </div>
+      )}
+
+      {/* Keyboard Shortcuts Modal */}
+      <KeyboardShortcutsModal
+        isOpen={isShortcutsOpen}
+        onClose={() => setIsShortcutsOpen(false)}
       />
 
-      {/* Translation Settings Setup Modal */}
+      {/* Translation Settings Modal */}
       <TranslationSettingsModal
         isOpen={isSettingsModalOpen}
         onClose={() => setIsSettingsModalOpen(false)}
         settings={translationSettings}
-        onUpdateSettings={handleUpdateSettings}
+        onUpdateSettings={setTranslationSettings}
         onConfirmAndTranslate={() => {
           setIsSettingsModalOpen(false);
-          handleTranslateSubtitles(false);
+          handleStartTranslate();
         }}
       />
 
@@ -685,7 +886,10 @@ export default function App() {
         onClose={() => setIsShiftOpen(false)}
         items={items}
         format={meta?.format}
-        onApplyShift={handleApplyTimeShift}
+        onApplyShift={(shifted) => {
+          setItems(shifted);
+          pushHistory(shifted);
+        }}
       />
 
       {/* Export Modal */}

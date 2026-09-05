@@ -986,6 +986,9 @@ app.get('/api/admin/gemini-keys', (req, res) => {
       cooldownRemainingSeconds: k.cooldownUntil && k.cooldownUntil > now ? Math.ceil((k.cooldownUntil - now) / 1000) : 0,
       successCount: k.successCount || 0,
       errorCount: k.errorCount || 0,
+      usedLines: k.usedLines || 0,
+      todayUsedLines: k.todayUsedLines || 0,
+      totalCalls: k.totalCalls || ((k.successCount || 0) + (k.errorCount || 0)),
       lastUsedAt: k.lastUsedAt || null,
       lastErrorMsg: k.lastErrorMsg || null,
       createdAt: k.createdAt || new Date().toISOString(),
@@ -1011,6 +1014,8 @@ app.get('/api/admin/gemini-keys', (req, res) => {
   const totalEstimatedDailyLines = totalDailyCapacity * 25;
   const poolCurrentRpm = maskedKeys.reduce((acc, k) => acc + k.currentRpm, 0);
   const poolTodayRequests = maskedKeys.reduce((acc, k) => acc + k.todayRequests, 0);
+  const totalPoolUsedLines = maskedKeys.reduce((acc, k) => acc + (k.usedLines || 0), 0);
+  const totalPoolTodayLines = maskedKeys.reduce((acc, k) => acc + (k.todayUsedLines || 0), 0);
 
   res.json({
     keys: maskedKeys,
@@ -1023,6 +1028,8 @@ app.get('/api/admin/gemini-keys', (req, res) => {
     totalEstimatedDailyLines,
     poolCurrentRpm,
     poolTodayRequests,
+    totalPoolUsedLines,
+    totalPoolTodayLines,
   });
 });
 
@@ -1190,6 +1197,9 @@ app.post('/api/admin/gemini-keys/reset-stats', (req, res) => {
         ...k,
         successCount: 0,
         errorCount: 0,
+        usedLines: 0,
+        todayUsedLines: 0,
+        totalCalls: 0,
         status: k.status === 'error' ? 'active' : k.status,
         cooldownUntil: null,
         lastErrorMsg: null,
@@ -2051,7 +2061,7 @@ app.post('/api/translate-subtitles', async (req, res) => {
   try {
     const { items, settings, apiKey: reqApiKey } = req.body;
     const customApiKey = reqApiKey || (req.headers['x-api-key'] as string);
-    const accessCode = (settings?.accessCode || (req.headers['x-access-code'] as string) || '').trim().toUpperCase();
+    const accessCode = (req.body.accessCode || settings?.accessCode || (req.headers['x-access-code'] as string) || '').trim().toUpperCase();
 
     if (!items || !Array.isArray(items) || items.length === 0) {
       return res.status(400).json({ error: 'Items array is required' });
@@ -2061,13 +2071,25 @@ app.post('/api/translate-subtitles', async (req, res) => {
     let effectiveApiKey = (customApiKey && customApiKey.trim()) || '';
     let matchedAccessKey: any = null;
 
-    // 1. Resolve API key candidates: user key, admin key, key pool, or server process.env.GEMINI_API_KEY
-    if (!effectiveApiKey) {
-      if (accessCode) {
-        matchedAccessKey = usageConfig.accessKeys?.find(
-          (k: any) => k.code?.trim().toUpperCase() === accessCode
-        );
+    // 1. Resolve Access Key (if user passed VIP access code)
+    if (accessCode) {
+      matchedAccessKey = usageConfig.accessKeys?.find(
+        (k: any) => k.code?.trim().toUpperCase() === accessCode
+      );
+      if (matchedAccessKey) {
+        if (matchedAccessKey.status !== 'active') {
+          return res.status(403).json({ error: 'VIP Access Key သည် ပိတ်ထားခြင်း (Revoked) ခံထားရပါသည်' });
+        }
+        if (matchedAccessKey.expiresAt && new Date(matchedAccessKey.expiresAt).getTime() < Date.now()) {
+          return res.status(403).json({ error: 'VIP Access Key သက်တမ်း ကုန်ဆုံးသွားပါပြီ' });
+        }
+        if (matchedAccessKey.maxLines > 0 && (matchedAccessKey.usedLines || 0) >= matchedAccessKey.maxLines) {
+          return res.status(403).json({ error: 'VIP Access Key ၏ ခွင့်ပြုစာကြောင်းရေ ပြည့်သွားပါပြီ' });
+        }
       }
+    }
+
+    if (!effectiveApiKey) {
       effectiveApiKey = (usageConfig.adminDefaultGeminiKey && usageConfig.adminDefaultGeminiKey.trim()) || process.env.GEMINI_API_KEY || '';
     }
 
@@ -2319,6 +2341,9 @@ ${JSON.stringify(items.map((i: any) => ({ id: i.id, text: i.text })))}`;
               const matchedInConfig = usageConfig.geminiKeyPool.find((k: any) => k.id === candidate.id);
               if (matchedInConfig) {
                 matchedInConfig.successCount = (matchedInConfig.successCount || 0) + 1;
+                matchedInConfig.usedLines = (matchedInConfig.usedLines || 0) + items.length;
+                matchedInConfig.todayUsedLines = (matchedInConfig.todayUsedLines || 0) + items.length;
+                matchedInConfig.totalCalls = (matchedInConfig.totalCalls || 0) + 1;
                 matchedInConfig.lastUsedAt = new Date().toISOString();
                 matchedInConfig.status = 'active';
                 matchedInConfig.cooldownUntil = null;

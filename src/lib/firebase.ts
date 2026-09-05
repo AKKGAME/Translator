@@ -179,15 +179,25 @@ export async function syncUserProfile(user: FirebaseUser): Promise<AppUserProfil
 }
 
 /**
- * Deduct credits after translation
+ * Deduct credits after translation & track total translated lines
  */
-export async function deductUserCredits(uid: string, linesCount: number): Promise<void> {
+export async function deductUserCredits(
+  uid: string,
+  linesCount: number,
+  shouldDeductCredits = true
+): Promise<void> {
   if (linesCount <= 0) return;
   const userRef = doc(db, 'users', uid);
-  await updateDoc(userRef, {
-    credits: increment(-linesCount),
-    totalTranslatedLines: increment(linesCount),
-  });
+  if (shouldDeductCredits) {
+    await updateDoc(userRef, {
+      credits: increment(-linesCount),
+      totalTranslatedLines: increment(linesCount),
+    });
+  } else {
+    await updateDoc(userRef, {
+      totalTranslatedLines: increment(linesCount),
+    });
+  }
 }
 
 /**

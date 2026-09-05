@@ -531,13 +531,9 @@ export default function App() {
       if (transResult) {
         // Deduct 1 credit if using server key
         if (!isUsingCustomKey && firebaseUser && userProfile) {
-          const isVipOrAdmin =
-            userProfile.role === 'admin' ||
-            userProfile.isVip ||
-            userProfile.tier === 'unlimited';
-          if (!isVipOrAdmin) {
-            deductUserCredits(firebaseUser.uid, 1).catch(console.warn);
-          }
+          const isUnlimitedAdmin =
+            userProfile.role === 'admin' || userProfile.tier === 'unlimited';
+          deductUserCredits(firebaseUser.uid, 1, !isUnlimitedAdmin).catch(console.warn);
         }
 
         setItems((prev) => {
@@ -897,12 +893,10 @@ export default function App() {
         return;
       }
 
-      const isVipOrAdmin =
-        userProfile?.role === 'admin' ||
-        userProfile?.isVip ||
-        userProfile?.tier === 'unlimited';
+      const isUnlimitedAdmin =
+        userProfile?.role === 'admin' || userProfile?.tier === 'unlimited';
 
-      if (!isVipOrAdmin && (userProfile?.credits ?? 0) <= 0) {
+      if (!isUnlimitedAdmin && (userProfile?.credits ?? 0) <= 0) {
         setIsUserProfileOpen(true);
         showAlert({
           title: 'Translation Credits ကုန်ဆုံးသွားပါပြီ',
@@ -955,6 +949,7 @@ export default function App() {
           items: chunk.map((item) => ({ id: item.id, text: item.originalText })),
           apiKey: translationSettings.customApiKey,
           customApiKeys: translationSettings.customApiKeys,
+          accessCode: translationSettings.accessCode,
           settings: {
             style: translationSettings.style,
             tone: translationSettings.tone,
@@ -968,6 +963,7 @@ export default function App() {
             conciseness: translationSettings.conciseness,
             customPromptNote: translationSettings.customPromptNote,
             storyContext: currentStoryContext,
+            accessCode: translationSettings.accessCode,
           },
         };
 
@@ -1014,16 +1010,12 @@ export default function App() {
 
         // Deduct credits for this translated batch
         if (!isUsingCustomKey && firebaseUser && userProfile) {
-          const isVipOrAdmin =
-            userProfile.role === 'admin' ||
-            userProfile.isVip ||
-            userProfile.tier === 'unlimited';
-          if (!isVipOrAdmin) {
-            try {
-              await deductUserCredits(firebaseUser.uid, chunk.length);
-            } catch (e) {
-              console.warn('Failed to deduct credits:', e);
-            }
+          const isUnlimitedAdmin =
+            userProfile.role === 'admin' || userProfile.tier === 'unlimited';
+          try {
+            await deductUserCredits(firebaseUser.uid, chunk.length, !isUnlimitedAdmin);
+          } catch (e) {
+            console.warn('Failed to deduct credits:', e);
           }
         }
 

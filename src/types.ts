@@ -67,11 +67,22 @@ export interface GeminiKeyPoolItem {
   label: string;
   status: 'active' | 'cooldown' | 'disabled' | 'error';
   cooldownUntil?: number | null;
+  cooldownRemainingSeconds?: number;
   successCount: number;
   errorCount: number;
+  usedLines?: number;
+  todayUsedLines?: number;
+  totalCalls?: number;
   lastUsedAt?: string | null;
   lastErrorMsg?: string | null;
   createdAt: string;
+  currentRpm?: number;
+  todayRequests?: number;
+  remainingDaily?: number;
+  estimatedRemainingLines?: number;
+  lastLatencyMs?: number;
+  rateLimitStatus?: string;
+  verifiedModel?: string;
 }
 
 export interface UsageConfig {

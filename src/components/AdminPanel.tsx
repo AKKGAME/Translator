@@ -100,6 +100,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     totalEstimatedDailyLines?: number;
     poolCurrentRpm?: number;
     poolTodayRequests?: number;
+    totalPoolUsedLines?: number;
+    totalPoolTodayLines?: number;
   }>({
     totalKeys: 0,
     activeCount: 0,
@@ -110,6 +112,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     totalEstimatedDailyLines: 0,
     poolCurrentRpm: 0,
     poolTodayRequests: 0,
+    totalPoolUsedLines: 0,
+    totalPoolTodayLines: 0,
   });
   const [isLoadingKeyPool, setIsLoadingKeyPool] = useState(false);
   const [bulkKeysInput, setBulkKeysInput] = useState('');
@@ -383,6 +387,8 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           totalEstimatedDailyLines: data.totalEstimatedDailyLines || (data.totalKeys || 0) * 37500,
           poolCurrentRpm: data.poolCurrentRpm || 0,
           poolTodayRequests: data.poolTodayRequests || 0,
+          totalPoolUsedLines: data.totalPoolUsedLines || 0,
+          totalPoolTodayLines: data.totalPoolTodayLines || 0,
         });
       }
     } catch (err) {
@@ -2494,7 +2500,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
                 <div className="flex items-center justify-between text-xs">
                   <span className="text-slate-200 font-mono font-semibold">
-                    {keyPoolStats.poolTodayRequests || 0} / {(keyPoolStats.totalDailyCapacity || keyPoolStats.totalKeys * 1500).toLocaleString()} Calls Used
+                    {keyPoolStats.poolTodayRequests || 0} / {(keyPoolStats.totalDailyCapacity || keyPoolStats.totalKeys * 1500).toLocaleString()} Calls
                   </span>
                   <span className="text-slate-400 text-[10px]">
                     {Math.max(0, (keyPoolStats.totalDailyCapacity || keyPoolStats.totalKeys * 1500) - (keyPoolStats.poolTodayRequests || 0)).toLocaleString()} Calls Left
@@ -2513,29 +2519,39 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
                 </div>
               </div>
 
-              {/* Card 2: Estimated Subtitle Lines Capacity */}
+              {/* Card 2: Actual Total Lines Translated by Pool */}
               <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 space-y-2">
                 <div className="text-[11px] text-slate-400 flex items-center justify-between">
-                  <span>Est. Subtitle Lines / Day</span>
+                  <span>Pool မှ ဘာသာပြန်ပြီး စာကြောင်းရေ</span>
                   <span className="text-emerald-400 font-mono font-bold">
-                    ~{(keyPoolStats.totalEstimatedDailyLines || keyPoolStats.totalKeys * 37500).toLocaleString()} Lines
+                    {(keyPoolStats.totalPoolUsedLines || 0).toLocaleString()} Lines
                   </span>
                 </div>
                 <div className="flex items-center justify-between text-xs">
-                  <span className="text-emerald-300 font-semibold">
-                    ~{Math.floor((keyPoolStats.totalEstimatedDailyLines || keyPoolStats.totalKeys * 37500) / 350)} Anime Episodes
+                  <span className="text-emerald-300 font-mono font-semibold">
+                    ယနေ့: {(keyPoolStats.totalPoolTodayLines || 0).toLocaleString()} Lines
                   </span>
-                  <span className="text-slate-400 text-[10px]">25 Lines / Call</span>
+                  <span className="text-slate-400 text-[10px]">
+                    ~{Math.floor((keyPoolStats.totalPoolUsedLines || 0) / 350)} Episodes
+                  </span>
                 </div>
-                <div className="text-[10px] text-emerald-400/90 leading-relaxed bg-emerald-950/20 border border-emerald-500/20 p-2 rounded-lg">
-                  💡 Key ၁၀ ခု ထည့်ထားပါက တစ်ရက်လျှင် စာကြောင်းရေ ၃ သိန်းကျော် (Anime အပိုင်း ၁၀၀ ကျော်) အခမဲ့ ဘာသာပြန်နိုင်ပါသည်။
+                <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-emerald-500 to-teal-400 rounded-full transition-all duration-500"
+                    style={{
+                      width: `${Math.min(100, Math.max(5, Math.round(((keyPoolStats.totalPoolTodayLines || 0) / Math.max(1, keyPoolStats.totalEstimatedDailyLines || keyPoolStats.totalKeys * 37500)) * 100)))}%`,
+                    }}
+                  />
+                </div>
+                <div className="text-[10px] text-emerald-400/90">
+                  Key Pool မှ စုစုပေါင်း ဘာသာပြန်ပေးပြီးသော စာကြောင်းအရေအတွက်
                 </div>
               </div>
 
               {/* Card 3: Live RPM Traffic */}
               <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 space-y-2">
                 <div className="text-[11px] text-slate-400 flex items-center justify-between">
-                  <span>Live Pool RPM Traffic (Active 60s)</span>
+                  <span>Live Pool RPM Traffic (60s)</span>
                   <span className="text-amber-400 font-mono font-bold">
                     {keyPoolStats.poolCurrentRpm || 0} / {Math.max(15, keyPoolStats.totalKeys * 15)} RPM
                   </span>
@@ -2806,7 +2822,8 @@ AIzaSyDxxx... (Key #3)`}
                         <th className="p-3 pl-2">Key Label & Masked</th>
                         <th className="p-3">Rate Limit Status</th>
                         <th className="p-3 min-w-[130px]">1-Min RPM (Limit 15)</th>
-                        <th className="p-3 min-w-[140px]">Today Quota (Limit 1.5K)</th>
+                        <th className="p-3 min-w-[135px]">ဘာသာပြန်ပြီး စာကြောင်း (Lines)</th>
+                        <th className="p-3 min-w-[135px]">Today Quota (Limit 1.5K)</th>
                         <th className="p-3">Latency & Calls</th>
                         <th className="p-3">Last Active</th>
                         <th className="p-3 text-right pr-4">Actions</th>
@@ -2820,9 +2837,6 @@ AIzaSyDxxx... (Key #3)`}
                         const rpmPercent = Math.min(100, Math.round((currentRpm / 15) * 100));
                         const todayReq = item.todayRequests || 0;
                         const rpdPercent = Math.min(100, Math.round((todayReq / 1500) * 100));
-                        const linesLeft = item.estimatedRemainingLines !== undefined 
-                          ? item.estimatedRemainingLines 
-                          : Math.max(0, 1500 - todayReq) * 25;
 
                         return (
                           <tr
@@ -2928,6 +2942,21 @@ AIzaSyDxxx... (Key #3)`}
                               </div>
                             </td>
 
+                            {/* Lines Translated by this Key */}
+                            <td className="p-3">
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between text-[11px] font-mono">
+                                  <span className="text-emerald-400 font-bold">
+                                    {(item.usedLines || 0).toLocaleString()} စာကြောင်း
+                                  </span>
+                                </div>
+                                <div className="text-[10px] text-slate-400 font-mono flex items-center justify-between">
+                                  <span>ယနေ့: {(item.todayUsedLines || 0).toLocaleString()}</span>
+                                  <span className="text-slate-500">({item.totalCalls || ((item.successCount || 0) + (item.errorCount || 0))} calls)</span>
+                                </div>
+                              </div>
+                            </td>
+
                             {/* Today Quota (RPD) */}
                             <td className="p-3">
                               <div className="space-y-1">
@@ -2944,9 +2973,6 @@ AIzaSyDxxx... (Key #3)`}
                                     }`}
                                     style={{ width: `${rpdPercent}%` }}
                                   />
-                                </div>
-                                <div className="text-[10px] text-slate-400 flex items-center justify-between">
-                                  <span>~{linesLeft.toLocaleString()} lines left</span>
                                 </div>
                               </div>
                             </td>

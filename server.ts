@@ -1557,6 +1557,37 @@ ${glossary.map((g: any) => `- "${g.original}" -> "${g.target}"`).join('\n')}
       ? 'Convert Western numerals (0-9) in translated text to Myanmar digits (၀-၉).'
       : 'Keep numbers as standard digits unless natural language numbers sound better.';
 
+    // Story & Dialogue Comprehension Context (Pre-read story knowledge)
+    const storyContext = settings?.storyContext;
+    let storyContextInstruction = '';
+    if (storyContext && typeof storyContext === 'object') {
+      const summary = storyContext.summary || '';
+      const settingTone = storyContext.settingAndTone || '';
+      const notes = storyContext.subtitlingNotes || '';
+      const chars = Array.isArray(storyContext.characters)
+        ? storyContext.characters
+            .map((c: any) => `- ${c.name || 'Character'}${c.roleOrGender ? ` (${c.roleOrGender})` : ''}: Use Myanmar pronoun/honorific "${c.myanmarPronoun || 'natural'}" [Relationship: ${c.relationshipWithOthers || 'N/A'}]`)
+            .join('\n')
+        : '';
+      const terms = Array.isArray(storyContext.keyTerminology)
+        ? storyContext.keyTerminology
+            .map((k: any) => `- "${k.term}" -> "${k.suggestedTranslation}"`)
+            .join('\n')
+        : '';
+
+      storyContextInstruction = `
+PRE-ANALYZED STORY COMPREHENSION & PRONOUN RULES (STRICTLY MANDATORY):
+The entire script dialogue has been pre-read and comprehended to eliminate all context and pronoun errors:
+- Plot Overview: ${summary}
+- Setting & Tone: ${settingTone}
+- Character Pronoun & Role Continuity:
+${chars}
+- Subtitling Directives: ${notes}
+${terms ? `- Story Terminology Rules:\n${terms}` : ''}
+CRITICAL MANDATE: Adhere strictly to the established character relationships and pronouns (ငါ/မင်း, ကျွန်တော်/မင်း, ရှင်/ကျွန်တော်, အစ်ကို/ညီ etc.). Do NOT randomly flip pronouns across subtitle lines!
+`;
+    }
+
     const systemInstruction = `
 You are a master professional film & video subtitle translator specializing in English to Myanmar (Burmese / မြန်မာဘာသာ) translation for cinema, TV shows, and video subtitles.
 
@@ -1578,6 +1609,7 @@ CRITICAL NATURAL TRANSLATION PRINCIPLES:
 15. Return a JSON object containing a "translations" array. Each array element MUST be an object with "id" (number matching input item id) and "translatedText" (string).
 16. Do NOT combine, merge, or skip any item IDs. Return an entry for EVERY input item provided in the request payload.
 17. SOUND NOISE & PANTING REMOVAL: Automatically OMIT panting sounds (e.g. "pant", "panting", "ဟောဟဲ...", "ဟောဟဲ"), sighs, groans, or non-verbal audio noise expressions from the translation output. If a line consists purely of panting or non-verbal sound noises, output an empty string "" for "translatedText".
+${storyContextInstruction}
 ${glossaryPrompt}
 ${customPromptNote ? `Additional User Guidelines: ${customPromptNote}` : ''}
 `;
@@ -1784,6 +1816,185 @@ ${JSON.stringify(items.map((i: any) => ({ id: i.id, text: i.text })))}`;
     res.status(500).json({
       error: error.message || 'Failed to translate subtitles with Gemini API',
     });
+  }
+});
+
+// POST /api/analyze-subtitles-context: Deep pre-reading comprehension of script dialogues before translation
+app.post('/api/analyze-subtitles-context', async (req, res) => {
+  try {
+    const { dialogues, apiKey, genre, customPromptNote } = req.body;
+    if (!Array.isArray(dialogues) || dialogues.length === 0) {
+      return res.status(400).json({ error: 'စာတန်းထိုး dialogue စာသားများ မရှိပါ' });
+    }
+
+    const usageConfig = getUsageConfig();
+    let effectiveApiKey = (apiKey && apiKey.trim()) || '';
+    if (!effectiveApiKey) {
+      effectiveApiKey =
+        (usageConfig.adminDefaultGeminiKey && usageConfig.adminDefaultGeminiKey.trim()) ||
+        process.env.GEMINI_API_KEY ||
+        '';
+    }
+
+    let keyCandidates: any[] = [];
+    if (effectiveApiKey && apiKey) {
+      keyCandidates = [{ id: 'user-key', key: effectiveApiKey, label: 'Custom User Key' }];
+    } else {
+      const healthyPoolKeys = getHealthyKeyCandidates(usageConfig);
+      if (healthyPoolKeys.length > 0) {
+        keyCandidates = healthyPoolKeys;
+      } else if (usageConfig.adminDefaultGeminiKey && usageConfig.adminDefaultGeminiKey.trim()) {
+        keyCandidates = [
+          { id: 'admin-default', key: usageConfig.adminDefaultGeminiKey.trim(), label: 'Admin Default Key' },
+        ];
+      } else if (process.env.GEMINI_API_KEY) {
+        keyCandidates = [{ id: 'env-default', key: process.env.GEMINI_API_KEY, label: 'Server ENV Key' }];
+      }
+    }
+
+    if (keyCandidates.length === 0) {
+      return res.status(503).json({
+        error: 'Gemini API Key မရှိသေးပါ (Gemini Key ထည့်သွင်းပါ)',
+        isRateLimit: true,
+      });
+    }
+
+    // Sample dialogues if too large to fit in fast inference window while covering beginning, middle, climax
+    let sampledDialogues = dialogues;
+    if (dialogues.length > 160) {
+      const head = dialogues.slice(0, 90);
+      const midStart = Math.floor(dialogues.length / 2) - 25;
+      const mid = dialogues.slice(midStart, midStart + 45);
+      const tail = dialogues.slice(-25);
+      sampledDialogues = [...head, ...mid, ...tail];
+    }
+
+    const scriptText = sampledDialogues
+      .map((d: any, idx: number) => `[Line ${idx + 1}] ${d.text}`)
+      .join('\n');
+
+    const systemInstruction = `
+You are a veteran film script supervisor, dramaturg, and expert English-to-Myanmar (Burmese) subtitle director.
+Your crucial responsibility is to perform a DEEP SCRIPT COMPREHENSION ANALYSIS before translation begins.
+The goal is to eliminate mistranslations, prevent incorrect character genders or roles, maintain 100% natural and consistent Myanmar honorifics/pronouns (ငါ/မင်း, ကျွန်တော်/ခင်ဗျား, ရှင်/ကျွန်တော်, အစ်ကို/ညီ), and ensure proper story context.
+
+Analyze the dialogues and return a JSON object with:
+1. "summary": Concise plot overview of what is happening in this scene/episode (2-3 sentences written in clear Myanmar Burmese).
+2. "settingAndTone": The physical/social setting and emotional mood (in Burmese, e.g. "အထက်တန်းကျောင်း၊ ရင်းနှီးသော သူငယ်ချင်းများကြား ပေါ့ပါးရယ်မောဖွယ် စကားပြောခန်း").
+3. "characters": Array of identified characters/speakers. Each item:
+   - "name": Character or speaker name/tag
+   - "roleOrGender": Character gender/age/role (in Burmese, e.g. "ဆယ်ကျော်သက် ကောင်လေး", "တပ်မှူး", "ကျောင်းဆရာမ")
+   - "myanmarPronoun": EXACT Myanmar pronouns to use consistently for them (e.g. "ငါ/မင်း", "ကျွန်တော်/ခင်ဗျား", "ရှင်/ကျွန်တော်", "အစ်ကို/ညီ")
+   - "relationshipWithOthers": How they relate to other characters (e.g. "မိတ်ဆွေရင်း", "မောင်နှမ", "အထက်လူနှင့်လက်အောက်ငယ်သား")
+4. "subtitlingNotes": Key guidance to prevent subtitling mistakes for this specific context (in Burmese).
+5. "keyTerminology": Array of specific story terms, character names, or slang detected, with "term" and "suggestedTranslation".
+`;
+
+    const promptText = `Please read through and comprehend the following dialogue script from the video:
+
+${scriptText}
+
+${genre ? `Genre: ${genre}` : ''}
+${customPromptNote ? `Special instructions: ${customPromptNote}` : ''}
+`;
+
+    const modelsToTry = [
+      'gemini-2.5-flash',
+      'gemini-3.7-flash',
+      'gemini-3.6-flash',
+      'gemini-flash-latest',
+      'gemini-3.1-flash-lite',
+    ];
+
+    let responseText = '';
+    let success = false;
+    let lastError: any = null;
+
+    for (const candidate of keyCandidates) {
+      if (success) break;
+      let candidateAi: GoogleGenAI;
+      try {
+        candidateAi = getGeminiClient(candidate.key);
+      } catch (e: any) {
+        continue;
+      }
+
+      for (const modelName of modelsToTry) {
+        if (success) break;
+        try {
+          const response = await candidateAi.models.generateContent({
+            model: modelName,
+            contents: promptText,
+            config: {
+              systemInstruction,
+              temperature: 0.2,
+              responseMimeType: 'application/json',
+              responseSchema: {
+                type: Type.OBJECT,
+                properties: {
+                  summary: { type: Type.STRING },
+                  settingAndTone: { type: Type.STRING },
+                  characters: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        name: { type: Type.STRING },
+                        roleOrGender: { type: Type.STRING },
+                        myanmarPronoun: { type: Type.STRING },
+                        relationshipWithOthers: { type: Type.STRING },
+                      },
+                      required: ['name', 'myanmarPronoun'],
+                    },
+                  },
+                  subtitlingNotes: { type: Type.STRING },
+                  keyTerminology: {
+                    type: Type.ARRAY,
+                    items: {
+                      type: Type.OBJECT,
+                      properties: {
+                        term: { type: Type.STRING },
+                        suggestedTranslation: { type: Type.STRING },
+                      },
+                      required: ['term', 'suggestedTranslation'],
+                    },
+                  },
+                },
+                required: ['summary', 'characters', 'settingAndTone'],
+              },
+            },
+          });
+
+          responseText = response.text || '{}';
+          if (responseText && responseText !== '{}') {
+            success = true;
+            break;
+          }
+        } catch (err: any) {
+          lastError = err;
+        }
+      }
+    }
+
+    if (!success) {
+      throw lastError || new Error('ဇာတ်လမ်း သုံးသပ်မှု ပြုလုပ်၍ မရပါ');
+    }
+
+    let cleanJson = responseText.trim();
+    if (cleanJson.startsWith('```json')) {
+      cleanJson = cleanJson.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+    } else if (cleanJson.startsWith('```')) {
+      cleanJson = cleanJson.replace(/^```\s*/, '').replace(/\s*```$/, '');
+    }
+
+    const analysis = JSON.parse(cleanJson);
+    analysis.analyzedLinesCount = sampledDialogues.length;
+    analysis.analyzedAt = Date.now();
+
+    res.json({ success: true, analysis });
+  } catch (err: any) {
+    console.error('Error analyzing script context:', err);
+    res.status(500).json({ error: err.message || 'ဇာတ်လမ်း သုံးသပ်မှု မအောင်မြင်ပါ' });
   }
 });
 

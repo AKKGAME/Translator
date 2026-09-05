@@ -49,7 +49,9 @@ import {
   Cpu,
   Activity,
   CheckCheck,
+  Users,
 } from 'lucide-react';
+import { AdminFirebaseUsers } from './AdminFirebaseUsers';
 
 interface SavedFileMeta {
   id: string;
@@ -82,7 +84,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Active Admin Sub-tab
-  const [activeTab, setActiveTab] = useState<'donation' | 'usage' | 'keypool' | 'telegram' | 'files' | 'password'>('donation');
+  const [activeTab, setActiveTab] = useState<'donation' | 'users' | 'usage' | 'keypool' | 'telegram' | 'files' | 'password'>('donation');
 
   // Gemini Multi-Key Pool State
   const [keyPoolKeys, setKeyPoolKeys] = useState<any[]>([]);
@@ -1348,6 +1350,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         </button>
 
         <button
+          onClick={() => setActiveTab('users')}
+          className={`flex items-center space-x-2 px-4 py-3 border-b-2 text-xs font-bold transition whitespace-nowrap ${
+            activeTab === 'users'
+              ? 'border-purple-500 text-purple-400 bg-purple-500/5'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Users className="w-4 h-4 text-purple-400" />
+          <span>Firebase Users & Promo Codes</span>
+        </button>
+
+        <button
           onClick={() => {
             setActiveTab('usage');
             fetchUsageConfig();
@@ -1545,6 +1559,23 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               <span>{isSavingDonation ? 'သိမ်းဆည်းနေပါသည်...' : 'အလှူငွေ အကောင့်များ သိမ်းဆည်းမည်'}</span>
             </button>
           </div>
+        </div>
+      )}
+
+      {/* Tab: Firebase Users & Promo Codes */}
+      {activeTab === 'users' && (
+        <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-6 shadow-sm">
+          <div className="border-b border-slate-800 pb-4">
+            <h2 className="text-sm font-bold text-slate-100 flex items-center space-x-2">
+              <Users className="w-4 h-4 text-purple-400" />
+              <span>Firebase အသုံးပြုသူများနှင့် Promo Codes / Vouchers စီမံခန့်ခွဲခြင်း</span>
+            </h2>
+            <p className="text-xs text-slate-400 mt-1">
+              Google Account ဖြင့် ဝင်ရောက်ထားသော User တစ်ဦးချင်းစီ၏ Credit လက်ကျန်စစ်ဆေးခြင်း၊ Credit တိုးပေးခြင်း၊ VIP သတ်မှတ်ခြင်းနှင့် Promo Voucher Codes ဖန်တီးခြင်း
+            </p>
+          </div>
+
+          <AdminFirebaseUsers />
         </div>
       )}
 

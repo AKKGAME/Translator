@@ -14,6 +14,10 @@ import {
   Tag,
   Plus,
   Trash2,
+  Brain,
+  CheckCircle2,
+  RefreshCw,
+  Users,
 } from 'lucide-react';
 
 interface TranslationSettingsModalProps {
@@ -22,6 +26,8 @@ interface TranslationSettingsModalProps {
   settings: TranslationSettings;
   onUpdateSettings: (newSettings: TranslationSettings) => void;
   onConfirmAndTranslate: () => void;
+  onAnalyzeContext?: () => Promise<void>;
+  isAnalyzingContext?: boolean;
 }
 
 export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> = ({
@@ -30,6 +36,8 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
   settings,
   onUpdateSettings,
   onConfirmAndTranslate,
+  onAnalyzeContext,
+  isAnalyzingContext = false,
 }) => {
   const [translationMode, setTranslationMode] = useState<'ai' | 'manual'>('ai');
 
@@ -106,6 +114,97 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
         {/* Mode 1: AI Translation Settings */}
         {translationMode === 'ai' && (
           <div className="space-y-3.5">
+            {/* 1. Deep Pre-reading Story Comprehension (ဘာသာမပြန်မီ ဇာတ်လမ်းနှင့် ဇာတ်ကောင် အရင်ဖတ်ရှု နားလည်စေခြင်း) */}
+            <div className="bg-[#0b0e18] p-4 rounded-md border border-purple-500/40 space-y-3 shadow-md">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                <div className="flex items-center space-x-2">
+                  <div className="p-1.5 bg-purple-500/20 text-purple-300 rounded">
+                    <Brain className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <span className="text-xs font-bold text-purple-200 block">
+                      ဇာတ်လမ်းနှင့် ဇာတ်ကောင် ကြိုတင်ဖတ်ရှု သုံးသပ်ခြင်း (Pre-read Story Context)
+                    </span>
+                    <span className="text-[11px] text-slate-400">
+                      ဘာသာမပြန်မီ AI အား ဇာတ်လမ်း၊ ဇာတ်ကောင် ဆက်ဆံရေးနှင့် Pronoun များကို အရင်နားလည်စေပြီးမှ ဘာသာပြန်စေမည်
+                    </span>
+                  </div>
+                </div>
+
+                <label className="flex items-center space-x-2 cursor-pointer shrink-0">
+                  <input
+                    type="checkbox"
+                    checked={settings.enableContextPreAnalysis !== false}
+                    onChange={(e) =>
+                      onUpdateSettings({
+                        ...settings,
+                        enableContextPreAnalysis: e.target.checked,
+                      })
+                    }
+                    className="accent-purple-500 w-4 h-4 rounded"
+                  />
+                  <span className="text-xs font-semibold text-purple-300">ဖွင့်ထားမည်</span>
+                </label>
+              </div>
+
+              {settings.enableContextPreAnalysis !== false && (
+                <div className="bg-[#070910] p-3 rounded border border-[#23273e] space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-1.5 text-[11px] text-slate-300">
+                      {settings.storyContext ? (
+                        <span className="flex items-center text-emerald-400 font-semibold space-x-1">
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          <span>ဇာတ်လမ်းကို ဖတ်ရှု သုံးသပ်ထားပြီးပါပြီ ({settings.storyContext.characters?.length || 0} characters)</span>
+                        </span>
+                      ) : (
+                        <span className="text-slate-400">
+                          ဘာသာပြန်စတင်ချိန်တွင် အလိုအလျောက် ဖတ်ရှုမည် (သို့မဟုတ် အခုချက်ချင်း ဖတ်ရှုနိုင်သည်)
+                        </span>
+                      )}
+                    </div>
+
+                    {onAnalyzeContext && (
+                      <button
+                        type="button"
+                        onClick={onAnalyzeContext}
+                        disabled={isAnalyzingContext}
+                        className="px-2.5 py-1 bg-purple-600/80 hover:bg-purple-600 text-white rounded text-[11px] font-bold transition flex items-center space-x-1 disabled:opacity-50 cursor-pointer"
+                      >
+                        <RefreshCw className={`w-3 h-3 ${isAnalyzingContext ? 'animate-spin' : ''}`} />
+                        <span>{isAnalyzingContext ? 'ဖတ်ရှုသုံးသပ်နေပါသည်...' : settings.storyContext ? 'ပြန်လည်ဖတ်ရှုမည်' : 'အခုချက်ချင်း ဖတ်ရှုမည်'}</span>
+                      </button>
+                    )}
+                  </div>
+
+                  {settings.storyContext && (
+                    <div className="space-y-2 pt-1 border-t border-[#1e2236] text-[11px]">
+                      <div>
+                        <span className="text-slate-400 font-semibold">ဇာတ်လမ်းအကျဉ်း: </span>
+                        <span className="text-slate-200">{settings.storyContext.summary}</span>
+                      </div>
+                      <div className="flex flex-wrap gap-2 text-[10px]">
+                        <span className="bg-purple-950/70 border border-purple-800/60 px-2 py-0.5 rounded text-purple-300 font-mono">
+                          Mood: {settings.storyContext.settingAndTone}
+                        </span>
+                        {settings.storyContext.characters?.map((c, idx) => (
+                          <span
+                            key={idx}
+                            className="bg-indigo-950/70 border border-indigo-800/60 px-2 py-0.5 rounded text-indigo-200 font-medium"
+                          >
+                            👤 {c.name}: <b className="text-amber-300">"{c.myanmarPronoun}"</b> ({c.roleOrGender || 'role'})
+                          </span>
+                        ))}
+                      </div>
+                      {settings.storyContext.subtitlingNotes && (
+                        <div className="text-[10px] text-slate-400 italic">
+                          💡 ညွှန်ကြားချက်: {settings.storyContext.subtitlingNotes}
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
 
             {/* 2. Speaker Name Handling (ဘယ်သူပြောလဲ အမည်ဖြုတ်မလား/ထားမလား) */}
             <div className="bg-[#07090e] p-4 rounded-md border border-indigo-500/30 space-y-2.5 shadow-sm">

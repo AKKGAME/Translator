@@ -1,0 +1,53 @@
+{
+  "entities": {
+    "users": {
+      "title": "User",
+      "description": "User account with translation credits, subscription status, and usage metrics",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Firebase Auth UID" },
+        "email": { "type": "string", "format": "email" },
+        "displayName": { "type": "string" },
+        "photoURL": { "type": "string" },
+        "role": { "type": "string", "enum": ["user", "vip", "admin"] },
+        "tier": { "type": "string", "enum": ["free", "pro", "unlimited"] },
+        "credits": { "type": "number", "description": "Remaining translation credits (lines of subtitles)" },
+        "totalTranslatedLines": { "type": "number", "description": "Cumulative lines translated by user" },
+        "isVip": { "type": "boolean" },
+        "vipExpiresAt": { "type": "string", "format": "date-time" },
+        "createdAt": { "type": "string", "format": "date-time" },
+        "lastLoginAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "email", "credits"]
+    },
+    "promoCodes": {
+      "title": "Promo Code / Voucher",
+      "description": "Redeemable promo codes for purchasing credits or VIP access",
+      "type": "object",
+      "properties": {
+        "code": { "type": "string" },
+        "credits": { "type": "number" },
+        "isVipUpgrade": { "type": "boolean" },
+        "maxUses": { "type": "number" },
+        "usedCount": { "type": "number" },
+        "isActive": { "type": "boolean" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["code", "credits", "isActive"]
+    },
+    "usageLogs": {
+      "title": "Usage Log",
+      "description": "History of translation credits used or promo codes redeemed",
+      "type": "object",
+      "properties": {
+        "userId": { "type": "string" },
+        "userEmail": { "type": "string" },
+        "linesCount": { "type": "number" },
+        "action": { "type": "string" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["userId", "linesCount", "action"]
+    }
+  },
+  "firestoreRules": "firestore.rules"
+}

@@ -5,6 +5,7 @@ import {
   TranslationSettings,
   VideoConfig,
   UsageConfig,
+  StoryContextAnalysis,
 } from './types';
 import { parseSubtitles, msToTimeSRT } from './utils/subtitleParser';
 import { DEFAULT_GLOSSARY_TERMS } from './utils/burmeseUtils';
@@ -17,7 +18,19 @@ import { TimeOffsetModal } from './components/TimeOffsetModal';
 import { ExportModal } from './components/ExportModal';
 import { DonationModal } from './components/DonationModal';
 import { AdminPanel } from './components/AdminPanel';
-import { translateDirectlyViaGemini } from './utils/geminiDirect';
+import { UserProfileModal } from './components/UserProfileModal';
+import {
+  auth,
+  googleProvider,
+  signInWithPopup,
+  onAuthStateChanged,
+  syncUserProfile,
+  AppUserProfile,
+  deductUserCredits,
+  db,
+} from './lib/firebase';
+import { doc, onSnapshot } from 'firebase/firestore';
+import { translateDirectlyViaGemini, analyzeStoryContextDirectlyViaGemini } from './utils/geminiDirect';
 import {
   getLocalUsageConfig,
   getSavedAccessCode,
@@ -80,12 +93,65 @@ export default function App() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isShiftOpen, setIsShiftOpen] = useState(false);
+  const [isUserProfileOpen, setIsUserProfileOpen] = useState(false);
+
+  // Firebase User & Profile
+  const [firebaseUser, setFirebaseUser] = useState<any>(null);
+  const [userProfile, setUserProfile] = useState<AppUserProfile | null>(null);
+
+  useEffect(() => {
+    let unsubscribeSnap: (() => void) | null = null;
+    const unsubscribeAuth = onAuthStateChanged(auth, async (currUser) => {
+      setFirebaseUser(currUser);
+      if (currUser) {
+        try {
+          const profile = await syncUserProfile(currUser);
+          setUserProfile(profile);
+
+          const userRef = doc(db, 'users', currUser.uid);
+          unsubscribeSnap = onSnapshot(userRef, (snapshot) => {
+            if (snapshot.exists()) {
+              setUserProfile(snapshot.data() as AppUserProfile);
+            }
+          });
+        } catch (err) {
+          console.warn('Firebase user sync failed:', err);
+        }
+      } else {
+        setUserProfile(null);
+        if (unsubscribeSnap) {
+          unsubscribeSnap();
+          unsubscribeSnap = null;
+        }
+      }
+    });
+
+    return () => {
+      unsubscribeAuth();
+      if (unsubscribeSnap) unsubscribeSnap();
+    };
+  }, []);
+
+  const handleGoogleSignIn = async () => {
+    try {
+      const res = await signInWithPopup(auth, googleProvider);
+      if (res.user) {
+        const profile = await syncUserProfile(res.user);
+        setUserProfile(profile);
+      }
+    } catch (err: any) {
+      console.error('Google sign in error:', err);
+      alert('Google Sign In မအောင်မြင်ပါ: ' + (err.message || 'Error occurred'));
+    }
+  };
 
   // Translation State & Progress
   const [isTranslating, setIsTranslating] = useState(false);
   const [translationProgress, setTranslationProgress] = useState<{ current: number; total: number } | undefined>(
     undefined
   );
+  const [isAnalyzingContext, setIsAnalyzingContext] = useState(false);
+  const [contextAnalysisStep, setContextAnalysisStep] = useState<'idle' | 'reading' | 'done'>('idle');
   const isCancelledRef = useRef(false);
 
   // Hidden file input refs
@@ -136,6 +202,8 @@ export default function App() {
       customPromptNote: '',
       customApiKey: savedKey,
       accessCode: savedAccessCode,
+      enableContextPreAnalysis: true,
+      storyContext: null,
       donationConfig: savedDonation || {
         kpayPhone: '09770033353',
         kpayName: 'Aung Kyaw Khant',
@@ -326,6 +394,25 @@ export default function App() {
 
   // Single Line AI Translation
   const handleTranslateSingleItem = useCallback(async (item: SubtitleItem) => {
+    // Credit & Auth Check if not using personal custom API key
+    const isUsingCustomKey = !!translationSettings.customApiKey?.trim();
+    if (!isUsingCustomKey) {
+      if (!firebaseUser) {
+        setIsUserProfileOpen(true);
+        alert('ဘာသာပြန်ရန်အတွက် Google Account ဖြင့် Sign In ဝင်ရောက်ပေးပါ (300 Free Credits ရရှိပါမည်) သို့မဟုတ် Settings တွင် ကိုယ်ပိုင် Gemini API Key ထည့်သွင်းနိုင်ပါသည်');
+        return;
+      }
+      const isVipOrAdmin =
+        userProfile?.role === 'admin' ||
+        userProfile?.isVip ||
+        userProfile?.tier === 'unlimited';
+      if (!isVipOrAdmin && (userProfile?.credits ?? 0) <= 0) {
+        setIsUserProfileOpen(true);
+        alert('Translation Credits ကုန်ဆုံးသွားပါပြီ။ Promo Code ရိုက်ထည့်ပါ သို့မဟုတ် Credit ထပ်မံဖြည့်တင်းပါ');
+        return;
+      }
+    }
+
     setItems((prev) =>
       prev.map((it) => (it.id === item.id ? { ...it, status: 'translating' } : it))
     );
@@ -346,6 +433,7 @@ export default function App() {
           honorificStyle: translationSettings.honorificStyle,
           conciseness: translationSettings.conciseness,
           customPromptNote: translationSettings.customPromptNote,
+          storyContext: translationSettings.storyContext,
         },
       };
 
@@ -377,6 +465,17 @@ export default function App() {
       }
 
       if (transResult) {
+        // Deduct 1 credit if using server key
+        if (!isUsingCustomKey && firebaseUser && userProfile) {
+          const isVipOrAdmin =
+            userProfile.role === 'admin' ||
+            userProfile.isVip ||
+            userProfile.tier === 'unlimited';
+          if (!isVipOrAdmin) {
+            deductUserCredits(firebaseUser.uid, 1).catch(console.warn);
+          }
+        }
+
         setItems((prev) => {
           const updated = prev.map((it) =>
             it.id === item.id
@@ -400,7 +499,7 @@ export default function App() {
         )
       );
     }
-  }, [translationSettings, pushHistory]);
+  }, [translationSettings, firebaseUser, userProfile, pushHistory]);
 
   // Keyboard Shortcuts Listener
   useEffect(() => {
@@ -643,13 +742,105 @@ export default function App() {
     });
   };
 
+  // Deep script pre-reading comprehension analysis
+  const handleAnalyzeStoryContext = async (force: boolean = false): Promise<StoryContextAnalysis | null> => {
+    if (items.length === 0) return null;
+    if (!force && translationSettings.storyContext) {
+      return translationSettings.storyContext;
+    }
+
+    setIsAnalyzingContext(true);
+    try {
+      const dialogues = items.map((it) => ({ id: it.id, text: it.originalText }));
+      const payload = {
+        dialogues,
+        apiKey: translationSettings.customApiKey,
+        customPromptNote: translationSettings.customPromptNote,
+      };
+
+      let analysis: StoryContextAnalysis | null = null;
+      try {
+        const res = await fetch('/api/analyze-subtitles-context', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        });
+        if (res.ok) {
+          const data = await res.json();
+          analysis = data.analysis;
+        } else {
+          analysis = await analyzeStoryContextDirectlyViaGemini(
+            dialogues,
+            translationSettings.customApiKey || '',
+            translationSettings
+          );
+        }
+      } catch {
+        analysis = await analyzeStoryContextDirectlyViaGemini(
+          dialogues,
+          translationSettings.customApiKey || '',
+          translationSettings
+        );
+      }
+
+      if (analysis) {
+        setTranslationSettings((prev) => ({
+          ...prev,
+          storyContext: analysis,
+        }));
+        return analysis;
+      }
+    } catch (err) {
+      console.warn('Story context analysis error:', err);
+    } finally {
+      setIsAnalyzingContext(false);
+    }
+    return null;
+  };
+
   // AI Batch Translate
   const handleStartTranslate = async () => {
     if (items.length === 0 || isTranslating) return;
 
+    // Credit & Auth Check (if not using personal custom Gemini API key)
+    const isUsingCustomKey = !!translationSettings.customApiKey?.trim();
+    if (!isUsingCustomKey) {
+      if (!firebaseUser) {
+        setIsUserProfileOpen(true);
+        alert('ဘာသာပြန်ရန်အတွက် Google Account ဖြင့် Sign In ဝင်ရောက်ပေးပါ (အခမဲ့ 300 Free Credits ရရှိပါမည်) သို့မဟုတ် Settings တွင် ကိုယ်ပိုင် Gemini API Key ထည့်သွင်းနိုင်ပါသည်');
+        return;
+      }
+
+      const isVipOrAdmin =
+        userProfile?.role === 'admin' ||
+        userProfile?.isVip ||
+        userProfile?.tier === 'unlimited';
+
+      if (!isVipOrAdmin && (userProfile?.credits ?? 0) <= 0) {
+        setIsUserProfileOpen(true);
+        alert('သင်၏ Translation Credit များ ကုန်ဆုံးသွားပါပြီ။ Promo Code ရိုက်ထည့်ပါ သို့မဟုတ် Credit ထပ်မံဖြည့်တင်းပါ');
+        return;
+      }
+    }
+
     isCancelledRef.current = false;
     setIsTranslating(true);
 
+    // Step 1: Pre-read story & characters if enabled and not already analyzed
+    let currentStoryContext = translationSettings.storyContext;
+    if (translationSettings.enableContextPreAnalysis !== false && !currentStoryContext) {
+      setContextAnalysisStep('reading');
+      currentStoryContext = await handleAnalyzeStoryContext(false);
+      setContextAnalysisStep('done');
+    }
+
+    if (isCancelledRef.current) {
+      setIsTranslating(false);
+      setContextAnalysisStep('idle');
+      return;
+    }
+
+    // Step 2: Batch Translation with pre-comprehended story context
     const batchSize = translationSettings.batchSize || 25;
     const itemsToTranslate = items.filter((i) => !i.translatedText || i.status !== 'completed');
     const targetItems = itemsToTranslate.length > 0 ? itemsToTranslate : [...items];
@@ -685,6 +876,7 @@ export default function App() {
             honorificStyle: translationSettings.honorificStyle,
             conciseness: translationSettings.conciseness,
             customPromptNote: translationSettings.customPromptNote,
+            storyContext: currentStoryContext,
           },
         };
 
@@ -704,14 +896,14 @@ export default function App() {
             translations = await translateDirectlyViaGemini(
               payload.items,
               translationSettings.customApiKey || '',
-              translationSettings
+              { ...translationSettings, storyContext: currentStoryContext }
             );
           }
         } catch {
           translations = await translateDirectlyViaGemini(
             payload.items,
             translationSettings.customApiKey || '',
-            translationSettings
+            { ...translationSettings, storyContext: currentStoryContext }
           );
         }
 
@@ -729,6 +921,21 @@ export default function App() {
           })
         );
 
+        // Deduct credits for this translated batch
+        if (!isUsingCustomKey && firebaseUser && userProfile) {
+          const isVipOrAdmin =
+            userProfile.role === 'admin' ||
+            userProfile.isVip ||
+            userProfile.tier === 'unlimited';
+          if (!isVipOrAdmin) {
+            try {
+              await deductUserCredits(firebaseUser.uid, chunk.length);
+            } catch (e) {
+              console.warn('Failed to deduct credits:', e);
+            }
+          }
+        }
+
         setTranslationProgress({
           current: Math.min(targetItems.length, i + chunk.length),
           total: targetItems.length,
@@ -739,6 +946,7 @@ export default function App() {
     }
 
     setIsTranslating(false);
+    setContextAnalysisStep('idle');
     setTranslationProgress(undefined);
   };
 
@@ -770,9 +978,11 @@ export default function App() {
         onCancelTranslate={() => {
           isCancelledRef.current = true;
           setIsTranslating(false);
+          setContextAnalysisStep('idle');
         }}
         isTranslating={isTranslating}
         translationProgress={translationProgress}
+        contextAnalysisStep={contextAnalysisStep}
         onExportClick={() => setIsExportOpen(true)}
         onUploadSubtitleClick={() => subtitleInputRef.current?.click()}
         onUploadVideoClick={() => videoInputRef.current?.click()}
@@ -786,6 +996,10 @@ export default function App() {
         onOpenAdmin={() => setActiveTab(activeTab === 'admin' ? 'studio' : 'admin')}
         onOpenDonate={() => setIsDonationModalOpen(true)}
         hasSubtitles={items.length > 0}
+        user={firebaseUser}
+        profile={userProfile}
+        onOpenUserProfile={() => setIsUserProfileOpen(true)}
+        onGoogleSignIn={handleGoogleSignIn}
       />
 
       {/* Main Studio Body: Workspace + Bottom Timeline */}
@@ -826,6 +1040,9 @@ export default function App() {
             onUploadVideo={handleVideoUpload}
             customVideoUrl={customVideoUrl}
             customVideoFileName={customVideoFileName}
+            onAnalyzeStoryContext={() => handleAnalyzeStoryContext(true)}
+            isAnalyzingContext={isAnalyzingContext}
+            contextAnalysisStep={contextAnalysisStep}
             onUploadSubtitle={(file) => {
               const reader = new FileReader();
               reader.onload = (ev) => {
@@ -874,6 +1091,8 @@ export default function App() {
         onClose={() => setIsSettingsModalOpen(false)}
         settings={translationSettings}
         onUpdateSettings={setTranslationSettings}
+        onAnalyzeContext={() => handleAnalyzeStoryContext(true)}
+        isAnalyzingContext={isAnalyzingContext}
         onConfirmAndTranslate={() => {
           setIsSettingsModalOpen(false);
           handleStartTranslate();
@@ -905,6 +1124,13 @@ export default function App() {
         isOpen={isDonationModalOpen}
         onClose={() => setIsDonationModalOpen(false)}
         donationConfig={translationSettings.donationConfig}
+      />
+
+      {/* User Profile & Credit Top-up / Promo Code Modal */}
+      <UserProfileModal
+        isOpen={isUserProfileOpen}
+        onClose={() => setIsUserProfileOpen(false)}
+        onProfileUpdated={(updated) => setUserProfile(updated)}
       />
     </div>
   );

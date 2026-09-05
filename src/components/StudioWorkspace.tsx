@@ -35,6 +35,11 @@ import {
   Gauge,
   Film,
   Check,
+  Brain,
+  BookOpen,
+  RefreshCw,
+  X,
+  CheckCircle2,
 } from 'lucide-react';
 import { AnimeSceneCanvas } from './AnimeSceneCanvas';
 import { msToTimeSRT } from '../utils/subtitleParser';
@@ -71,6 +76,9 @@ interface StudioWorkspaceProps {
   onStripTags?: () => void;
   onBatchReplace?: (searchTerm: string, replaceTerm: string, targetField: 'both' | 'original' | 'translated', matchCase: boolean) => void;
   onNewSubtitle?: () => void;
+  onAnalyzeStoryContext?: () => Promise<void>;
+  isAnalyzingContext?: boolean;
+  contextAnalysisStep?: 'idle' | 'reading' | 'done';
 }
 
 export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
@@ -104,6 +112,9 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
   onStripTags,
   onBatchReplace,
   onNewSubtitle,
+  onAnalyzeStoryContext,
+  isAnalyzingContext = false,
+  contextAnalysisStep = 'idle',
 }) => {
   const [activeBottomTab, setActiveBottomTab] = useState<'style' | 'utils' | 'options'>('style');
   const [isDrawerOpen, setIsDrawerOpen] = useState(false);
@@ -114,6 +125,9 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
   const [autoScroll, setAutoScroll] = useState(true);
   const [hoverScrubMs, setHoverScrubMs] = useState<number | null>(null);
   const [isDraggingOver, setIsDraggingOver] = useState(false);
+
+  // Story Context Drawer State
+  const [isStoryContextOpen, setIsStoryContextOpen] = useState(false);
 
   // Find & Replace state
   const [isFindReplaceOpen, setIsFindReplaceOpen] = useState(false);
@@ -849,6 +863,25 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
           </div>
 
           <div className="flex items-center space-x-2 sm:space-x-3 text-[11px] text-slate-400">
+            {/* Story Context Pre-read Toggle Button */}
+            <button
+              onClick={() => setIsStoryContextOpen(!isStoryContextOpen)}
+              className={`px-2 py-0.5 rounded text-[11px] font-medium flex items-center space-x-1.5 transition ${
+                isStoryContextOpen
+                  ? 'bg-purple-600 text-white shadow-xs'
+                  : translationSettings.storyContext
+                  ? 'bg-purple-950/70 text-purple-200 border border-purple-800/60 hover:bg-purple-900/80'
+                  : 'text-slate-400 hover:text-slate-200 hover:bg-[#1a1c2a]'
+              }`}
+              title="ဇာတ်လမ်း & ဇာတ်ကောင် သုံးသပ်ချက် (Story Context)"
+            >
+              <Brain className={`w-3.5 h-3.5 ${isAnalyzingContext || contextAnalysisStep === 'reading' ? 'animate-spin text-amber-300' : 'text-purple-400'}`} />
+              <span className="hidden sm:inline">Story Context</span>
+              {translationSettings.storyContext && (
+                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
+              )}
+            </button>
+
             {/* Find & Replace Toggle */}
             <button
               onClick={() => setIsFindReplaceOpen(!isFindReplaceOpen)}
@@ -941,6 +974,130 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
                 <span className="text-[10px] text-slate-500">
                   Replace All နှိပ်ပါက စာကြောင်းအားလုံးတွင် အလိုအလျောက် အစားထိုးပါမည်
                 </span>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* Step 1: Real-time Script Comprehension Banner */}
+        {(isAnalyzingContext || contextAnalysisStep === 'reading') && (
+          <div className="bg-purple-950/80 border-b border-purple-500/40 p-2.5 px-4 text-xs flex items-center justify-between text-purple-200 animate-pulse backdrop-blur-xs">
+            <div className="flex items-center space-x-2.5">
+              <Brain className="w-4 h-4 text-amber-300 animate-spin" />
+              <div>
+                <span className="font-bold text-amber-300">အဆင့် (၁/၂) - စာသားများကို သေချာဖတ်ရှု လေ့လာနေပါသည်: </span>
+                <span>ဘာသာမပြန်မီ ဇာတ်လမ်းနောက်ခံ၊ ဇာတ်ကောင် ဆက်ဆံရေးနှင့် Pronoun များကို အရင်နားလည်အောင် ဖတ်ရှုနေပါသည်...</span>
+              </div>
+            </div>
+            <span className="text-[10px] font-mono bg-purple-900/60 px-2 py-0.5 rounded border border-purple-700/50">
+              Pre-Reading Context...
+            </span>
+          </div>
+        )}
+
+        {/* Story Context Details Panel (Collapsible / On-demand) */}
+        {isStoryContextOpen && (
+          <div className="bg-[#0e101c] border-b border-purple-500/30 p-3 text-xs text-slate-200 space-y-2.5 animate-in slide-in-from-top-1 duration-150">
+            <div className="flex items-center justify-between pb-1.5 border-b border-[#1f233a]">
+              <div className="flex items-center space-x-2">
+                <Brain className="w-4 h-4 text-purple-400" />
+                <span className="font-bold text-slate-100">
+                  ဇာတ်လမ်း & ဇာတ်ကောင် အချက်အလက် (Pre-read Story Knowledge)
+                </span>
+                {translationSettings.storyContext && (
+                  <span className="text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 px-1.5 py-0.2 rounded font-semibold">
+                    လေ့လာသိရှိပြီး
+                  </span>
+                )}
+              </div>
+
+              <div className="flex items-center space-x-2">
+                {onAnalyzeStoryContext && (
+                  <button
+                    onClick={() => onAnalyzeStoryContext()}
+                    disabled={isAnalyzingContext}
+                    className="px-2 py-0.5 bg-purple-600/80 hover:bg-purple-600 text-white rounded text-[11px] font-medium flex items-center space-x-1 transition disabled:opacity-50 cursor-pointer"
+                  >
+                    <RefreshCw className={`w-3 h-3 ${isAnalyzingContext ? 'animate-spin' : ''}`} />
+                    <span>{isAnalyzingContext ? 'ဖတ်ရှုနေသည်...' : 'ပြန်လည်ဖတ်ရှုမည်'}</span>
+                  </button>
+                )}
+                <button
+                  onClick={() => setIsStoryContextOpen(false)}
+                  className="p-1 hover:bg-[#1f233a] rounded text-slate-400 hover:text-slate-200 transition cursor-pointer"
+                  title="ပိတ်မည်"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            </div>
+
+            {translationSettings.storyContext ? (
+              <div className="space-y-2 text-[11px]">
+                <div>
+                  <span className="text-slate-400 font-semibold">ဇာတ်လမ်းအကျဉ်း: </span>
+                  <span className="text-slate-200 leading-relaxed">
+                    {translationSettings.storyContext.summary}
+                  </span>
+                </div>
+
+                <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                  <span className="text-slate-400 font-semibold mr-1">Setting / Mood:</span>
+                  <span className="bg-purple-950/70 border border-purple-800/60 px-2 py-0.5 rounded text-purple-300 text-[10px] font-mono">
+                    {translationSettings.storyContext.settingAndTone}
+                  </span>
+                </div>
+
+                {translationSettings.storyContext.characters && translationSettings.storyContext.characters.length > 0 && (
+                  <div className="pt-1">
+                    <span className="text-slate-400 font-semibold block mb-1">
+                      ဇာတ်ကောင်များနှင့် သတ်မှတ် Pronoun စည်းမျဉ်းများ:
+                    </span>
+                    <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-1.5">
+                      {translationSettings.storyContext.characters.map((c, idx) => (
+                        <div
+                          key={idx}
+                          className="bg-[#070912] border border-[#23273e] p-1.5 px-2 rounded text-[10px] flex flex-col justify-between"
+                        >
+                          <div className="flex items-center justify-between">
+                            <span className="font-bold text-slate-100">{c.name}</span>
+                            <span className="text-slate-500 font-mono text-[9px]">{c.roleOrGender || 'role'}</span>
+                          </div>
+                          <div className="mt-1 text-slate-300">
+                            Pronoun: <strong className="text-amber-300 font-bold">"{c.myanmarPronoun}"</strong>
+                          </div>
+                          {c.relationshipWithOthers && (
+                            <div className="text-[9px] text-slate-400 truncate mt-0.5">
+                              {c.relationshipWithOthers}
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {translationSettings.storyContext.subtitlingNotes && (
+                  <div className="text-[10px] text-purple-300/90 bg-purple-950/30 p-1.5 px-2 rounded border border-purple-900/30">
+                    💡 <b>Subtitling Directives:</b> {translationSettings.storyContext.subtitlingNotes}
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div className="py-2 text-center text-slate-400 space-y-1.5">
+                <p className="text-xs">ဇာတ်လမ်း သုံးသပ်ချက် အချက်အလက် မရှိသေးပါ</p>
+                <p className="text-[10px] text-slate-500">
+                  ဘာသာပြန်စတင်ချိန်တွင် အလိုအလျောက် သုံးသပ်မည်ဖြစ်ပြီး၊ အောက်ပါခလုတ်ဖြင့်လည်း အခုချက်ချင်း စမ်းသပ်ဖတ်ရှုနိုင်ပါသည်
+                </p>
+                {onAnalyzeStoryContext && (
+                  <button
+                    onClick={() => onAnalyzeStoryContext()}
+                    disabled={isAnalyzingContext || items.length === 0}
+                    className="mt-1 px-3 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-xs font-bold transition disabled:opacity-40 cursor-pointer"
+                  >
+                    {isAnalyzingContext ? 'ဖတ်ရှုသုံးသပ်နေပါသည်...' : 'ဇာတ်လမ်း အခုချက်ချင်း ဖတ်ရှုမည် (Pre-read Now)'}
+                  </button>
+                )}
               </div>
             )}
           </div>

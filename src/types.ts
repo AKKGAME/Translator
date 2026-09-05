@@ -96,6 +96,28 @@ export interface UserAccessStatus {
   message?: string;
 }
 
+export interface StoryCharacter {
+  name: string;
+  roleOrGender?: string;
+  myanmarPronoun?: string; // e.g. ငါ/မင်း, ကျွန်တော်/ခင်ဗျား, အစ်ကို/ညီ
+  relationshipWithOthers?: string;
+}
+
+export interface StoryKeyTerm {
+  term: string;
+  suggestedTranslation: string;
+}
+
+export interface StoryContextAnalysis {
+  summary: string; // Brief overview of the scene/dialogue context
+  characters: StoryCharacter[];
+  settingAndTone: string; // e.g. "School drama, playful banter between close friends"
+  keyTerminology?: StoryKeyTerm[];
+  subtitlingNotes?: string; // e.g. "Use intimate pronouns (ငါ/မင်း) for Hiro and Ken, polite (ရှင်/ကျွန်တော်) with teacher"
+  analyzedLinesCount?: number;
+  analyzedAt?: number;
+}
+
 export interface TranslationSettings {
   style: TranslationStyle;
   tone: ToneStyle;
@@ -109,6 +131,8 @@ export interface TranslationSettings {
   honorificStyle: HonorificStyle;
   conciseness: SubtitleConciseness;
   customPromptNote: string;
+  enableContextPreAnalysis: boolean; // Pre-read whole context before translating to avoid mistakes
+  storyContext?: StoryContextAnalysis | null;
   customApiKey?: string;
   accessCode?: string; // VIP Access Code
   donationConfig?: DonationConfig;

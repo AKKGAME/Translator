@@ -3,6 +3,8 @@
  * and direct browser usage with Free / Paid Gemini API keys.
  */
 
+import { StoryContextAnalysis } from '../types';
+
 interface SubtitleItemInput {
   id: number;
   text: string;
@@ -19,6 +21,7 @@ interface TranslationSettingsInput {
   honorificStyle?: string;
   speakerNameHandling?: 'omit' | 'keep_english' | 'transliterate' | 'translate_context';
   properNounsMode?: 'keep_english' | 'myanmar_phonetic';
+  storyContext?: StoryContextAnalysis | null;
 }
 
 /**
@@ -139,6 +142,17 @@ ${properNounsRule}
     if (settings.customPromptNote) {
       promptText += `\nAdditional Custom Instruction: ${settings.customPromptNote}`;
     }
+    if (settings.storyContext) {
+      const sc = settings.storyContext;
+      promptText += `\n\nCRITICAL PRE-ANALYZED STORY CONTEXT & PRONOUN RULES:
+- Plot Summary: ${sc.summary}
+- Setting & Tone: ${sc.settingAndTone}
+- Character Pronoun Continuity:
+${sc.characters?.map((c) => `  * ${c.name} (${c.roleOrGender || 'Character'}): Pronoun "${c.myanmarPronoun}" [${c.relationshipWithOthers || ''}]`).join('\n')}
+- Translation Directives: ${sc.subtitlingNotes || ''}
+${sc.keyTerminology && sc.keyTerminology.length > 0 ? `- Terminology: ${sc.keyTerminology.map((k) => `${k.term} -> ${k.suggestedTranslation}`).join(', ')}` : ''}
+MANDATE: Adhere strictly to these pronouns and relationships to ensure zero errors.`;
+    }
 
     let success = false;
     let attempt = 0;
@@ -232,3 +246,103 @@ ${properNounsRule}
 
   return results;
 }
+
+/**
+ * Deep pre-reading comprehension of script dialogues before translation
+ */
+export async function analyzeStoryContextDirectlyViaGemini(
+  items: SubtitleItemInput[],
+  apiKey: string,
+  settings: TranslationSettingsInput
+): Promise<StoryContextAnalysis> {
+  const effectiveKey =
+    apiKey?.trim() ||
+    localStorage.getItem('user_gemini_api_key') ||
+    localStorage.getItem('admin_default_gemini_api_key') ||
+    '';
+
+  if (!effectiveKey) {
+    throw new Error('Gemini API Key ထည့်သွင်းပေးရန် လိုအပ်ပါသည်');
+  }
+
+  const modelsToTry = [
+    'gemini-2.5-flash',
+    'gemini-3.7-flash',
+    'gemini-3.6-flash',
+    'gemini-flash-latest',
+    'gemini-3.1-flash-lite',
+  ];
+
+  // Sample items if dialogue is large
+  let sampled = items;
+  if (items.length > 160) {
+    const head = items.slice(0, 90);
+    const midStart = Math.floor(items.length / 2) - 25;
+    const mid = items.slice(midStart, midStart + 45);
+    const tail = items.slice(-25);
+    sampled = [...head, ...mid, ...tail];
+  }
+
+  const scriptText = sampled.map((s, idx) => `[Line ${idx + 1}] ${s.text}`).join('\n');
+
+  const promptText = `You are a veteran film script supervisor, dramaturg, and expert English-to-Myanmar (Burmese) subtitle translation director.
+Read and deeply analyze the following dialogue script from the video before translating, to ensure 100% natural and consistent Myanmar honorifics, pronouns (ငါ/မင်း, ကျွန်တော်/ခင်ဗျား, ရှင်/ကျွန်တော်, အစ်ကို/ညီ), and correct story context:
+
+${scriptText}
+
+${settings.customPromptNote ? `Special notes: ${settings.customPromptNote}` : ''}
+
+Respond with a JSON object containing:
+1. "summary": Concise plot overview of what is happening in this scene/episode (in natural Myanmar Burmese).
+2. "settingAndTone": The physical/social setting and emotional mood (in Burmese).
+3. "characters": Array of identified characters/speakers:
+   - "name": character name
+   - "roleOrGender": approximate role/gender in Burmese
+   - "myanmarPronoun": EXACT Myanmar pronouns to use consistently for them (e.g. "ငါ/မင်း", "ကျွန်တော်/ခင်ဗျား", "ရှင်/ကျွန်တော်", "အစ်ကို/ညီ")
+   - "relationshipWithOthers": relationship with other characters
+4. "subtitlingNotes": Key guidance to prevent subtitling mistakes for this specific story (in Burmese).
+5. "keyTerminology": Array of specific story terms or names detected with "term" and "suggestedTranslation".`;
+
+  let lastErrorMsg = '';
+
+  for (const model of modelsToTry) {
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
+        model
+      )}:generateContent?key=${encodeURIComponent(effectiveKey)}`;
+
+      const res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: promptText }] }],
+          generationConfig: {
+            temperature: 0.2,
+            responseMimeType: 'application/json',
+          },
+        }),
+      });
+
+      if (res.ok) {
+        const data = await res.json();
+        const rawText = data.candidates?.[0]?.content?.parts?.[0]?.text || '{}';
+        let clean = rawText.trim();
+        if (clean.startsWith('```json')) clean = clean.replace(/^```json\s*/, '').replace(/\s*```$/, '');
+        else if (clean.startsWith('```')) clean = clean.replace(/^```\s*/, '').replace(/\s*```$/, '');
+
+        const parsed: StoryContextAnalysis = JSON.parse(clean);
+        parsed.analyzedLinesCount = sampled.length;
+        parsed.analyzedAt = Date.now();
+        return parsed;
+      } else {
+        const err = await res.json().catch(() => ({}));
+        lastErrorMsg = err.error?.message || `HTTP ${res.status}`;
+      }
+    } catch (e: any) {
+      lastErrorMsg = e.message || '';
+    }
+  }
+
+  throw new Error(`ဇာတ်လမ်း သုံးသပ်မှု မအောင်မြင်ပါ: ${lastErrorMsg || 'API စစ်ဆေးပါ'}`);
+}
+

@@ -1,6 +1,8 @@
 import express from 'express';
 import path from 'path';
 import fs from 'fs';
+import zlib from 'zlib';
+import AdmZip from 'adm-zip';
 import dotenv from 'dotenv';
 import { GoogleGenAI, Type } from '@google/genai';
 
@@ -30,6 +32,7 @@ app.use((req, res, next) => {
       req.url.startsWith('/translate') ||
       req.url.startsWith('/save-subtitle') ||
       req.url.startsWith('/download') ||
+      req.url.startsWith('/subtitles') ||
       req.url.startsWith('/donation') ||
       req.url.startsWith('/health')
     ) {
@@ -52,11 +55,16 @@ try {
   if (!fs.existsSync(subsDir)) {
     fs.mkdirSync(subsDir, { recursive: true });
   }
+  const subCacheDir = path.join(TMP_DATA_DIR, 'sub_cache');
+  if (!fs.existsSync(subCacheDir)) {
+    fs.mkdirSync(subCacheDir, { recursive: true });
+  }
 } catch (err) {
   console.warn('Storage directory initialization note:', err);
 }
 
 const SAVED_SUBS_DIR = path.join(TMP_DATA_DIR, 'saved_subtitles');
+const SUB_CACHE_DIR = path.join(TMP_DATA_DIR, 'sub_cache');
 
 // Helper to resolve read path: checks /tmp first (for runtime changes), then repo data dir
 function getConfigFileReadPath(filename: string): string {
@@ -144,6 +152,83 @@ let inMemoryAdmin = { ...DEFAULT_ADMIN };
 let inMemoryUsage = { ...DEFAULT_USAGE };
 let inMemoryManifest: any[] = [];
 let poolRotationIndex = 0;
+
+// Rate Limit Tracking per Key (Gemini Free Tier: 15 RPM / 1,500 RPD)
+interface KeyRateLimitRecord {
+  minuteTimestamps: number[];
+  dailyDate: string;
+  dailyRequests: number;
+  lastLatencyMs: number;
+}
+const keyRateLimitTracker = new Map<string, KeyRateLimitRecord>();
+
+function getKeyRateLimitStats(keyId: string) {
+  const now = Date.now();
+  const todayStr = new Date().toISOString().slice(0, 10);
+  let record = keyRateLimitTracker.get(keyId);
+  if (!record) {
+    record = {
+      minuteTimestamps: [],
+      dailyDate: todayStr,
+      dailyRequests: 0,
+      lastLatencyMs: 0,
+    };
+    keyRateLimitTracker.set(keyId, record);
+  }
+
+  // clean timestamps older than 60s
+  record.minuteTimestamps = record.minuteTimestamps.filter((ts) => ts > now - 60000);
+
+  // reset daily if day changed
+  if (record.dailyDate !== todayStr) {
+    record.dailyDate = todayStr;
+    record.dailyRequests = 0;
+  }
+
+  const currentRpm = record.minuteTimestamps.length;
+  const rpmLimit = 15;
+  const rpdLimit = 1500;
+  const remainingDaily = Math.max(0, rpdLimit - record.dailyRequests);
+  const estimatedRemainingLines = remainingDaily * 25;
+
+  return {
+    currentRpm,
+    rpmLimit,
+    rpmPercent: Math.min(100, Math.round((currentRpm / rpmLimit) * 100)),
+    todayRequests: record.dailyRequests,
+    rpdLimit,
+    rpdPercent: Math.min(100, Math.round((record.dailyRequests / rpdLimit) * 100)),
+    remainingDaily,
+    estimatedRemainingLines,
+    lastLatencyMs: record.lastLatencyMs,
+  };
+}
+
+function recordKeyRequest(keyId: string, latencyMs = 0) {
+  const now = Date.now();
+  const todayStr = new Date().toISOString().slice(0, 10);
+  let record = keyRateLimitTracker.get(keyId);
+  if (!record) {
+    record = {
+      minuteTimestamps: [],
+      dailyDate: todayStr,
+      dailyRequests: 0,
+      lastLatencyMs: 0,
+    };
+    keyRateLimitTracker.set(keyId, record);
+  }
+
+  if (record.dailyDate !== todayStr) {
+    record.dailyDate = todayStr;
+    record.dailyRequests = 0;
+  }
+
+  record.minuteTimestamps.push(now);
+  record.dailyRequests++;
+  if (latencyMs > 0) {
+    record.lastLatencyMs = latencyMs;
+  }
+}
 
 function maskApiKey(key: string): string {
   if (!key || key.length < 8) return '****';
@@ -875,23 +960,57 @@ app.get('/api/admin/gemini-keys', (req, res) => {
   const pool = config.geminiKeyPool || [];
   const now = Date.now();
 
-  const maskedKeys = pool.map((k: any) => ({
-    id: k.id,
-    label: k.label || 'Gemini Key',
-    maskedKey: maskApiKey(k.key),
-    status: k.status,
-    cooldownUntil: k.cooldownUntil,
-    cooldownRemainingSeconds: k.cooldownUntil && k.cooldownUntil > now ? Math.ceil((k.cooldownUntil - now) / 1000) : 0,
-    successCount: k.successCount || 0,
-    errorCount: k.errorCount || 0,
-    lastUsedAt: k.lastUsedAt || null,
-    lastErrorMsg: k.lastErrorMsg || null,
-    createdAt: k.createdAt || new Date().toISOString(),
-  }));
+  const maskedKeys = pool.map((k: any) => {
+    const rlStats = getKeyRateLimitStats(k.id);
+    let rateLimitStatus = 'healthy';
+    if (k.status === 'cooldown' || (k.cooldownUntil && k.cooldownUntil > now)) {
+      rateLimitStatus = 'cooldown';
+    } else if (k.status === 'disabled') {
+      rateLimitStatus = 'disabled';
+    } else if (k.status === 'error') {
+      rateLimitStatus = 'error';
+    } else if (rlStats.todayRequests >= rlStats.rpdLimit) {
+      rateLimitStatus = 'exhausted';
+    } else if (rlStats.currentRpm >= 12) {
+      rateLimitStatus = 'near_limit';
+    } else if (rlStats.currentRpm >= 6) {
+      rateLimitStatus = 'high_traffic';
+    }
+
+    return {
+      id: k.id,
+      label: k.label || 'Gemini Key',
+      maskedKey: maskApiKey(k.key),
+      status: k.status,
+      cooldownUntil: k.cooldownUntil,
+      cooldownRemainingSeconds: k.cooldownUntil && k.cooldownUntil > now ? Math.ceil((k.cooldownUntil - now) / 1000) : 0,
+      successCount: k.successCount || 0,
+      errorCount: k.errorCount || 0,
+      lastUsedAt: k.lastUsedAt || null,
+      lastErrorMsg: k.lastErrorMsg || null,
+      createdAt: k.createdAt || new Date().toISOString(),
+      // Real-time Rate Limit metrics
+      currentRpm: rlStats.currentRpm,
+      rpmLimit: rlStats.rpmLimit,
+      rpmPercent: rlStats.rpmPercent,
+      todayRequests: rlStats.todayRequests,
+      rpdLimit: rlStats.rpdLimit,
+      rpdPercent: rlStats.rpdPercent,
+      remainingDaily: rlStats.remainingDaily,
+      estimatedRemainingLines: rlStats.estimatedRemainingLines,
+      lastLatencyMs: rlStats.lastLatencyMs,
+      rateLimitStatus,
+    };
+  });
 
   const activeCount = pool.filter((k: any) => k.status === 'active').length;
   const cooldownCount = pool.filter((k: any) => k.status === 'cooldown' && k.cooldownUntil && k.cooldownUntil > now).length;
   const errorCount = pool.filter((k: any) => k.status === 'error' || k.status === 'disabled').length;
+
+  const totalDailyCapacity = pool.length * 1500;
+  const totalEstimatedDailyLines = totalDailyCapacity * 25;
+  const poolCurrentRpm = maskedKeys.reduce((acc, k) => acc + k.currentRpm, 0);
+  const poolTodayRequests = maskedKeys.reduce((acc, k) => acc + k.todayRequests, 0);
 
   res.json({
     keys: maskedKeys,
@@ -900,6 +1019,10 @@ app.get('/api/admin/gemini-keys', (req, res) => {
     cooldownCount,
     errorCount,
     strategy: config.loadBalancingStrategy || 'round_robin',
+    totalDailyCapacity,
+    totalEstimatedDailyLines,
+    poolCurrentRpm,
+    poolTodayRequests,
   });
 });
 
@@ -1097,6 +1220,7 @@ app.post('/api/admin/gemini-keys/test', async (req, res) => {
     const ai = new GoogleGenAI({ apiKey: target.key.trim() });
     const testModels = ['gemini-2.5-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
     let verifiedModel = '';
+    const pingStart = Date.now();
 
     for (const m of testModels) {
       try {
@@ -1113,13 +1237,23 @@ app.post('/api/admin/gemini-keys/test', async (req, res) => {
       }
     }
 
+    const pingLatency = Date.now() - pingStart;
+    recordKeyRequest(target.id, pingLatency);
+    const rlStats = getKeyRateLimitStats(target.id);
+
     if (verifiedModel) {
       target.status = 'active';
       target.cooldownUntil = null;
       target.lastErrorMsg = null;
       target.lastUsedAt = new Date().toISOString();
       saveUsageConfig(config);
-      return res.json({ valid: true, model: verifiedModel, message: `Key is Active & Valid (${verifiedModel})` });
+      return res.json({
+        valid: true,
+        model: verifiedModel,
+        latencyMs: pingLatency,
+        rateLimits: rlStats,
+        message: `Key is Active & Valid (${verifiedModel} - ⚡ ${pingLatency}ms)`,
+      });
     }
 
     throw new Error('Gemini API did not respond');
@@ -1366,6 +1500,471 @@ app.delete('/api/admin/saved-subtitles/:id', (req, res) => {
   saveSubsManifest(manifest);
 
   res.json({ success: true, message: 'File deleted successfully' });
+});
+
+// ============================================================================
+// ONLINE SUBTITLES SEARCH, CACHING & DOWNLOAD ENGINE (OpenSubtitles & SubDL)
+// ============================================================================
+const SUBTITLES_CONFIG_FILE = 'subtitles-config.json';
+const DEFAULT_SUBTITLES_CONFIG = {
+  opensubtitlesApiKey: process.env.OPENSUBTITLES_API_KEY || '',
+  opensubtitlesUserAgent: process.env.OPENSUBTITLES_USER_AGENT || 'AnimeGabarTranslator v1.0.0',
+  subdlApiKey: process.env.SUBDL_API_KEY || '',
+  enableServerCache: true,
+  cacheTtlHours: 72,
+};
+
+function getSubtitlesConfig() {
+  const p = getConfigFileReadPath(SUBTITLES_CONFIG_FILE);
+  if (fs.existsSync(p)) {
+    try {
+      const data = JSON.parse(fs.readFileSync(p, 'utf-8'));
+      return { ...DEFAULT_SUBTITLES_CONFIG, ...data };
+    } catch {
+      return DEFAULT_SUBTITLES_CONFIG;
+    }
+  }
+  return DEFAULT_SUBTITLES_CONFIG;
+}
+
+function saveSubtitlesConfig(cfg: any) {
+  const p = getConfigFileWritePath(SUBTITLES_CONFIG_FILE);
+  fs.writeFileSync(p, JSON.stringify(cfg, null, 2), 'utf-8');
+}
+
+// In-Memory & Disk Subtitle Cache
+interface SubtitleCacheEntry {
+  content: string;
+  fileName: string;
+  format: string;
+  cachedAt: number;
+  source: string;
+  fileId: string | number;
+}
+const subMemoryCache = new Map<string, SubtitleCacheEntry>();
+const subCacheStats = {
+  totalSearches: 0,
+  totalDownloads: 0,
+  cacheHits: 0,
+};
+
+// Helper: Extract plain subtitle text from Buffer (handles ZIP, GZIP, UTF-8, UTF-16)
+function extractSubtitleTextFromBuffer(
+  buf: Buffer,
+  originalFileName?: string
+): { content: string; detectedName: string } {
+  // 1. Check if ZIP (PK\x03\x04)
+  if (buf.length > 4 && buf[0] === 0x50 && buf[1] === 0x4B && buf[2] === 0x03 && buf[3] === 0x04) {
+    try {
+      const zip = new AdmZip(buf);
+      const zipEntries = zip.getEntries();
+      // Find .srt, .vtt, or .ass entry
+      const subEntry =
+        zipEntries.find((e) => !e.isDirectory && /\.(srt|vtt|ass|sub)$/i.test(e.entryName)) ||
+        zipEntries.find((e) => !e.isDirectory);
+      if (subEntry) {
+        const text = subEntry.getData().toString('utf-8');
+        return {
+          content: text,
+          detectedName: subEntry.name || originalFileName || 'subtitle.srt',
+        };
+      }
+    } catch (zipErr) {
+      console.warn('AdmZip parse attempt note:', zipErr);
+    }
+  }
+
+  // 2. Check if GZIP (\x1f\x8b)
+  if (buf.length > 2 && buf[0] === 0x1f && buf[1] === 0x8b) {
+    try {
+      const unzipped = zlib.gunzipSync(buf);
+      return {
+        content: unzipped.toString('utf-8'),
+        detectedName: originalFileName || 'subtitle.srt',
+      };
+    } catch (gzErr) {
+      console.warn('gunzip attempt note:', gzErr);
+    }
+  }
+
+  // 3. Plain text decoding (checks UTF-16 LE BOM)
+  let text = '';
+  if (buf.length > 2 && buf[0] === 0xff && buf[1] === 0xfe) {
+    text = buf.toString('utf16le');
+  } else {
+    text = buf.toString('utf-8');
+  }
+  return { content: text, detectedName: originalFileName || 'subtitle.srt' };
+}
+
+// Public Subtitles Search API
+app.get('/api/subtitles/search', async (req, res) => {
+  try {
+    const query = String(req.query.query || '').trim();
+    const languages = String(req.query.languages || 'en,ja').trim();
+    const type = String(req.query.type || 'all').trim();
+    const seasonNumber = req.query.season_number ? Number(req.query.season_number) : undefined;
+    const episodeNumber = req.query.episode_number ? Number(req.query.episode_number) : undefined;
+
+    if (!query) {
+      return res.json({ results: [], total: 0, query: '' });
+    }
+
+    subCacheStats.totalSearches++;
+    const cfg = getSubtitlesConfig();
+
+    const headers: Record<string, string> = {
+      'User-Agent': cfg.opensubtitlesUserAgent || 'AnimeGabarTranslator v1.0.0',
+      Accept: 'application/json',
+    };
+    if (cfg.opensubtitlesApiKey) {
+      headers['Api-Key'] = cfg.opensubtitlesApiKey.trim();
+    }
+
+    // Build OpenSubtitles URL
+    const searchParams = new URLSearchParams({
+      query,
+      languages,
+      order_by: 'download_count',
+      order_direction: 'desc',
+    });
+    if (type !== 'all') {
+      searchParams.set('type', type);
+    }
+    if (seasonNumber !== undefined && !isNaN(seasonNumber)) {
+      searchParams.set('season_number', String(seasonNumber));
+    }
+    if (episodeNumber !== undefined && !isNaN(episodeNumber)) {
+      searchParams.set('episode_number', String(episodeNumber));
+    }
+
+    const openSubUrl = `https://api.opensubtitles.com/api/v1/subtitles?${searchParams.toString()}`;
+
+    let results: any[] = [];
+    let requiresKey = false;
+    let apiErrorMessage = '';
+
+    try {
+      const resp = await fetch(openSubUrl, {
+        method: 'GET',
+        headers,
+      });
+
+      if (resp.status === 401 || resp.status === 403) {
+        requiresKey = true;
+        apiErrorMessage = 'OpenSubtitles API Key ထည့်သွင်းရန် လိုအပ်ပါသည် (သို့မဟုတ် သက်တမ်းကုန်သွားပါသည်)';
+      } else if (!resp.ok) {
+        apiErrorMessage = `OpenSubtitles API status ${resp.status}`;
+      } else {
+        const json = await resp.json();
+        if (Array.isArray(json.data)) {
+          results = json.data.map((item: any) => {
+            const attr = item.attributes || {};
+            const fileObj = (attr.files && attr.files[0]) || {};
+            const fileName =
+              fileObj.file_name ||
+              `${attr.feature_details?.title || query}.${attr.language || 'en'}.srt`;
+            return {
+              id: item.id || String(fileObj.file_id || Math.random()),
+              fileId: fileObj.file_id || attr.legacy_subtitle_id || item.id,
+              source: 'opensubtitles',
+              fileName,
+              title: attr.feature_details?.title || attr.release || query,
+              year: attr.feature_details?.year,
+              season: attr.feature_details?.season_number,
+              episode: attr.feature_details?.episode_number,
+              language: attr.language || 'en',
+              downloadCount: attr.download_count || 0,
+              rating: attr.ratings || 0,
+              hearingImpaired: Boolean(attr.hearing_impaired),
+              format: (
+                attr.format ||
+                fileName.split('.').pop() ||
+                'srt'
+              ).toLowerCase(),
+              release: attr.release || '',
+              comments: attr.comments || '',
+            };
+          });
+        }
+      }
+    } catch (fetchErr: any) {
+      console.warn('OpenSubtitles fetch warning:', fetchErr?.message || fetchErr);
+      apiErrorMessage = fetchErr?.message || 'Search request failed';
+    }
+
+    res.json({
+      success: true,
+      query,
+      results,
+      total: results.length,
+      requiresKey,
+      hasConfiguredKey: Boolean(cfg.opensubtitlesApiKey),
+      apiErrorMessage,
+    });
+  } catch (err: any) {
+    console.error('Subtitles search error:', err);
+    res.status(500).json({ error: 'Search failed', details: err?.message });
+  }
+});
+
+// Public Subtitles Download & 1-Click Import API (With Server-Side In-Memory & Disk Caching)
+app.post('/api/subtitles/download', async (req, res) => {
+  try {
+    const { fileId, fileName, source } = req.body;
+    if (!fileId) {
+      return res.status(400).json({ error: 'fileId is required' });
+    }
+
+    subCacheStats.totalDownloads++;
+    const cfg = getSubtitlesConfig();
+    const cacheKey = `sub_${fileId}`;
+
+    // 1. Check in-memory cache
+    if (cfg.enableServerCache && subMemoryCache.has(cacheKey)) {
+      subCacheStats.cacheHits++;
+      const cached = subMemoryCache.get(cacheKey)!;
+      return res.json({
+        success: true,
+        content: cached.content,
+        fileName: cached.fileName || fileName || `${fileId}.srt`,
+        cached: true,
+        source: cached.source,
+      });
+    }
+
+    // 2. Check disk cache
+    const diskCachePath = path.join(SUB_CACHE_DIR, `${fileId}.srt`);
+    if (cfg.enableServerCache && fs.existsSync(diskCachePath)) {
+      subCacheStats.cacheHits++;
+      const content = fs.readFileSync(diskCachePath, 'utf-8');
+      const resolvedName = fileName || `${fileId}.srt`;
+      subMemoryCache.set(cacheKey, {
+        content,
+        fileName: resolvedName,
+        format: 'srt',
+        cachedAt: Date.now(),
+        source: source || 'opensubtitles',
+        fileId,
+      });
+      return res.json({
+        success: true,
+        content,
+        fileName: resolvedName,
+        cached: true,
+        source: source || 'opensubtitles',
+      });
+    }
+
+    // 3. Not in cache -> Call OpenSubtitles Download Endpoint
+    if (!cfg.opensubtitlesApiKey) {
+      return res.status(400).json({
+        error: 'OpenSubtitles API Key မထည့်သွင်းရသေးပါ။ Admin Panel ရှိ Online Subtitles တွင် API Key ထည့်သွင်းပေးပါ',
+      });
+    }
+
+    const downloadHeaders: Record<string, string> = {
+      'User-Agent': cfg.opensubtitlesUserAgent || 'AnimeGabarTranslator v1.0.0',
+      'Api-Key': cfg.opensubtitlesApiKey.trim(),
+      'Content-Type': 'application/json',
+      Accept: 'application/json',
+    };
+
+    const downloadReq = await fetch('https://api.opensubtitles.com/api/v1/download', {
+      method: 'POST',
+      headers: downloadHeaders,
+      body: JSON.stringify({ file_id: Number(fileId) }),
+    });
+
+    if (!downloadReq.ok) {
+      const errText = await downloadReq.text();
+      return res.status(downloadReq.status).json({
+        error: `OpenSubtitles download failed: ${errText || downloadReq.statusText}`,
+      });
+    }
+
+    const downloadInfo = await downloadReq.json();
+    const downloadLink = downloadInfo.link;
+
+    if (!downloadLink) {
+      return res.status(500).json({ error: 'No download link returned by OpenSubtitles' });
+    }
+
+    // 4. Fetch the subtitle file binary/text from downloadLink
+    const subFileResp = await fetch(downloadLink, {
+      headers: {
+        'User-Agent': cfg.opensubtitlesUserAgent || 'AnimeGabarTranslator v1.0.0',
+      },
+    });
+
+    if (!subFileResp.ok) {
+      return res.status(subFileResp.status).json({ error: 'Failed to stream subtitle content from provider' });
+    }
+
+    const arrayBuffer = await subFileResp.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const { content, detectedName } = extractSubtitleTextFromBuffer(buffer, downloadInfo.file_name || fileName);
+
+    const finalFileName = detectedName || downloadInfo.file_name || fileName || `${fileId}.srt`;
+
+    // 5. Store in Server Cache (both disk & memory) to save future quota
+    if (cfg.enableServerCache && content && content.length > 20) {
+      try {
+        fs.writeFileSync(diskCachePath, content, 'utf-8');
+        subMemoryCache.set(cacheKey, {
+          content,
+          fileName: finalFileName,
+          format: finalFileName.split('.').pop() || 'srt',
+          cachedAt: Date.now(),
+          source: source || 'opensubtitles',
+          fileId,
+        });
+      } catch (cacheErr) {
+        console.warn('Cache write warning:', cacheErr);
+      }
+    }
+
+    res.json({
+      success: true,
+      content,
+      fileName: finalFileName,
+      cached: false,
+      remainingQuota: downloadInfo.remaining,
+      resetTime: downloadInfo.reset_time,
+    });
+  } catch (err: any) {
+    console.error('Subtitle download error:', err);
+    res.status(500).json({ error: 'Download failed', details: err?.message });
+  }
+});
+
+// Direct Subtitle URL Fetcher (Bypasses CORS for direct SRT / VTT / ASS web links)
+app.post('/api/subtitles/fetch-url', async (req, res) => {
+  try {
+    const { url, preferredName } = req.body;
+    if (!url || typeof url !== 'string') {
+      return res.status(400).json({ error: 'Valid URL is required' });
+    }
+
+    const trimmedUrl = url.trim();
+    if (!trimmedUrl.startsWith('http://') && !trimmedUrl.startsWith('https://')) {
+      return res.status(400).json({ error: 'URL must start with http:// or https://' });
+    }
+
+    // Infer filename from URL
+    const urlParts = trimmedUrl.split('?')[0].split('/');
+    const rawFileName = decodeURIComponent(urlParts[urlParts.length - 1] || 'subtitle.srt');
+
+    const fetchResp = await fetch(trimmedUrl, {
+      headers: {
+        'User-Agent':
+          'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36',
+      },
+    });
+
+    if (!fetchResp.ok) {
+      return res.status(fetchResp.status).json({
+        error: `ဖိုင်ဆွဲယူ၍ မရနိုင်ပါ (HTTP status ${fetchResp.status}): ${fetchResp.statusText}`,
+      });
+    }
+
+    const arrayBuffer = await fetchResp.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    const { content, detectedName } = extractSubtitleTextFromBuffer(buffer, preferredName || rawFileName);
+
+    if (!content || content.length < 15) {
+      return res.status(400).json({ error: 'ရယူထားသော ဖိုင်ထဲတွင် စာတန်းထိုး အချက်အလက် မတွေ့ရှိပါ' });
+    }
+
+    res.json({
+      success: true,
+      content,
+      fileName: detectedName || preferredName || rawFileName,
+    });
+  } catch (err: any) {
+    console.error('Fetch URL error:', err);
+    res.status(500).json({ error: 'ဖိုင်ဆွဲယူခြင်း မအောင်မြင်ပါ', details: err?.message });
+  }
+});
+
+// Admin Subtitles Provider Config Endpoints
+app.get('/api/admin/subtitles-config', (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  const cfg = getSubtitlesConfig();
+  let cachedFilesCount = 0;
+  let totalCacheBytes = 0;
+  try {
+    if (fs.existsSync(SUB_CACHE_DIR)) {
+      const files = fs.readdirSync(SUB_CACHE_DIR);
+      cachedFilesCount = files.length;
+      for (const f of files) {
+        const stat = fs.statSync(path.join(SUB_CACHE_DIR, f));
+        totalCacheBytes += stat.size;
+      }
+    }
+  } catch {}
+
+  res.json({
+    config: {
+      ...cfg,
+      opensubtitlesApiKeyMasked: cfg.opensubtitlesApiKey
+        ? `${cfg.opensubtitlesApiKey.substring(0, 6)}...${cfg.opensubtitlesApiKey.slice(-4)}`
+        : '',
+      hasOpenSubtitlesKey: Boolean(cfg.opensubtitlesApiKey),
+    },
+    stats: {
+      cachedFilesCount,
+      totalCacheBytes,
+      totalCacheKb: Math.round(totalCacheBytes / 1024),
+      subCacheStats,
+      memoryCachedCount: subMemoryCache.size,
+    },
+  });
+});
+
+app.post('/api/admin/subtitles-config', (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  const current = getSubtitlesConfig();
+  const { opensubtitlesApiKey, opensubtitlesUserAgent, subdlApiKey, enableServerCache } = req.body;
+
+  const updated = {
+    ...current,
+    opensubtitlesApiKey:
+      opensubtitlesApiKey !== undefined ? String(opensubtitlesApiKey).trim() : current.opensubtitlesApiKey,
+    opensubtitlesUserAgent:
+      opensubtitlesUserAgent !== undefined
+        ? String(opensubtitlesUserAgent).trim()
+        : current.opensubtitlesUserAgent,
+    subdlApiKey: subdlApiKey !== undefined ? String(subdlApiKey).trim() : current.subdlApiKey,
+    enableServerCache: enableServerCache !== undefined ? Boolean(enableServerCache) : current.enableServerCache,
+  };
+
+  saveSubtitlesConfig(updated);
+  res.json({ success: true, message: 'Subtitle configuration saved successfully' });
+});
+
+app.post('/api/admin/subtitles-cache/clear', (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  subMemoryCache.clear();
+  let deletedCount = 0;
+  try {
+    if (fs.existsSync(SUB_CACHE_DIR)) {
+      const files = fs.readdirSync(SUB_CACHE_DIR);
+      for (const f of files) {
+        fs.unlinkSync(path.join(SUB_CACHE_DIR, f));
+        deletedCount++;
+      }
+    }
+  } catch (err) {
+    console.error('Cache clear error:', err);
+  }
+  res.json({ success: true, message: `Cleared ${deletedCount} cached subtitle files` });
 });
 
 // Initialize Gemini Client
@@ -1632,8 +2231,19 @@ ${JSON.stringify(items.map((i: any) => ({ id: i.id, text: i.text })))}`;
 
     // Determine Key Candidates
     let keyCandidates: any[] = [];
-    if (effectiveApiKey && customApiKey) {
-      // User supplied their own private key
+    const userKeysList = (Array.isArray(req.body.customApiKeys) && req.body.customApiKeys.length > 0)
+      ? req.body.customApiKeys.filter((k: any) => k && k.key && k.key.trim().length > 10)
+      : [];
+
+    if (userKeysList.length > 0) {
+      // User provided multiple project keys! Auto-rotate across all of them
+      keyCandidates = userKeysList.map((k: any, idx: number) => ({
+        id: k.id || `user-project-key-${idx}`,
+        key: k.key.trim(),
+        label: k.projectName || k.label || `User Project Key ${idx + 1}`,
+      }));
+    } else if (effectiveApiKey && customApiKey) {
+      // User supplied single private key
       keyCandidates = [{ id: 'user-key', key: effectiveApiKey, label: 'Custom User Key' }];
     } else {
       // Use Admin Multi-Key Pool with smart rotation & auto cooldown clearance
@@ -1667,6 +2277,7 @@ ${JSON.stringify(items.map((i: any) => ({ id: i.id, text: i.text })))}`;
 
       for (const modelName of modelsToTry) {
         if (success) break;
+        const callStart = Date.now();
         try {
           const response = await candidateAi.models.generateContent({
             model: modelName,
@@ -1695,6 +2306,11 @@ ${JSON.stringify(items.map((i: any) => ({ id: i.id, text: i.text })))}`;
             },
           });
 
+          const latencyMs = Date.now() - callStart;
+          if (candidate.id !== 'user-key') {
+            recordKeyRequest(candidate.id, latencyMs);
+          }
+
           responseText = response.text || '{}';
           if (responseText && responseText !== '{}') {
             success = true;
@@ -1714,6 +2330,9 @@ ${JSON.stringify(items.map((i: any) => ({ id: i.id, text: i.text })))}`;
           }
         } catch (err: any) {
           lastError = err;
+          if (candidate.id !== 'user-key') {
+            recordKeyRequest(candidate.id, Date.now() - callStart);
+          }
           const isRateLimit =
             err?.status === 'RESOURCE_EXHAUSTED' ||
             err?.code === 429 ||

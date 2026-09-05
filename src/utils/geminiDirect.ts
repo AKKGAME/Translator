@@ -13,6 +13,7 @@ interface SubtitleItemInput {
 interface TranslationSettingsInput {
   model?: string;
   customApiKey?: string;
+  customApiKeys?: Array<{ id: string; key: string; label?: string; projectName?: string }>;
   translationStyle?: string;
   customPromptNote?: string;
   style?: string;
@@ -82,14 +83,28 @@ export async function translateDirectlyViaGemini(
   settings: TranslationSettingsInput,
   onProgress?: (progress: number) => void
 ): Promise<Array<{ id: number; translatedText: string }>> {
-  // Check key: custom user key OR admin default key from localStorage
-  const effectiveKey =
-    apiKey?.trim() ||
-    localStorage.getItem('user_gemini_api_key') ||
-    localStorage.getItem('admin_default_gemini_api_key') ||
-    '';
+  // Collect candidate keys (including multi-project custom keys)
+  const candidateKeys: string[] = [];
+  if (settings.customApiKeys && settings.customApiKeys.length > 0) {
+    for (const k of settings.customApiKeys) {
+      if (k && k.key && k.key.trim().length > 10) {
+        candidateKeys.push(k.key.trim());
+      }
+    }
+  }
+  if (apiKey?.trim() && !candidateKeys.includes(apiKey.trim())) {
+    candidateKeys.unshift(apiKey.trim());
+  }
+  const localUserKey = localStorage.getItem('user_gemini_api_key');
+  if (localUserKey && !candidateKeys.includes(localUserKey)) {
+    candidateKeys.push(localUserKey);
+  }
+  const localAdminKey = localStorage.getItem('admin_default_gemini_api_key');
+  if (localAdminKey && !candidateKeys.includes(localAdminKey)) {
+    candidateKeys.push(localAdminKey);
+  }
 
-  if (!effectiveKey) {
+  if (candidateKeys.length === 0) {
     throw new Error(
       'Gemini API Key ထည့်သွင်းပေးရန် လိုအပ်ပါသည်။ (Google AI Studio မှ အခမဲ့ ရယူနိုင်ပါသည်)'
     );
@@ -107,6 +122,7 @@ export async function translateDirectlyViaGemini(
   // Batch size 25 items per request to reduce request count and stay within TPM/RPM limits
   const CHUNK_SIZE = 25;
   const results: Array<{ id: number; translatedText: string }> = [];
+  let currentKeyIndex = 0;
 
   for (let i = 0; i < items.length; i += CHUNK_SIZE) {
     const chunk = items.slice(i, i + CHUNK_SIZE);
@@ -156,12 +172,13 @@ MANDATE: Adhere strictly to these pronouns and relationships to ensure zero erro
 
     let success = false;
     let attempt = 0;
-    const maxAttempts = 6;
+    const maxAttempts = Math.max(6, candidateKeys.length * 3);
     let lastErrorMsg = '';
 
     while (!success && attempt < maxAttempts) {
       attempt++;
       const currentModel = modelsToTry[(attempt - 1) % modelsToTry.length];
+      const effectiveKey = candidateKeys[currentKeyIndex % candidateKeys.length];
 
       try {
         const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(
@@ -181,7 +198,12 @@ MANDATE: Adhere strictly to these pronouns and relationships to ensure zero erro
         });
 
         if (res.status === 429) {
-          // Free Tier Rate limit backoff
+          // Rotate to next project key immediately if multiple keys exist!
+          if (candidateKeys.length > 1) {
+            currentKeyIndex = (currentKeyIndex + 1) % candidateKeys.length;
+            console.warn(`[Multi-Project Key Rotation] Rate limit on key #${(currentKeyIndex % candidateKeys.length) + 1}. Auto-switching to next project key...`);
+            continue;
+          }
           const waitMs = Math.min(25000, attempt * 5000);
           console.warn(`[Gemini Free Tier] Rate limit (429) hit on model ${currentModel}. Waiting ${waitMs / 1000}s...`);
           await new Promise((r) => setTimeout(r, waitMs));
@@ -193,11 +215,15 @@ MANDATE: Adhere strictly to these pronouns and relationships to ensure zero erro
           const errMsg = errObj.error?.message || `HTTP ${res.status}`;
           lastErrorMsg = errMsg;
           if (errMsg.includes('429') || errMsg.includes('quota') || errMsg.includes('RESOURCE_EXHAUSTED')) {
+            if (candidateKeys.length > 1) {
+              currentKeyIndex = (currentKeyIndex + 1) % candidateKeys.length;
+              console.warn(`[Multi-Project Key Rotation] Quota exhausted on key. Swapped to project key #${currentKeyIndex + 1}`);
+              continue;
+            }
             const waitMs = Math.min(25000, attempt * 5000);
             await new Promise((r) => setTimeout(r, waitMs));
             continue;
           }
-          // If model not found or bad request on this model, continue to next model
           console.warn(`[Gemini Direct] Model ${currentModel} returned ${errMsg}. Trying next model...`);
           continue;
         }
@@ -218,6 +244,10 @@ MANDATE: Adhere strictly to these pronouns and relationships to ensure zero erro
 
         results.push(...translatedList);
         success = true;
+        // On success, gently alternate key for next batch chunk
+        if (candidateKeys.length > 1) {
+          currentKeyIndex = (currentKeyIndex + 1) % candidateKeys.length;
+        }
 
         if (onProgress) {
           const currentCount = Math.min(items.length, i + CHUNK_SIZE);

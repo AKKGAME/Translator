@@ -44,14 +44,16 @@ import {
   Percent,
   ShieldCheck,
   AlertTriangle,
-  Sparkles,
+  AlertCircle,
   Layers,
   Cpu,
   Activity,
   CheckCheck,
   Users,
+  Globe,
 } from 'lucide-react';
 import { AdminFirebaseUsers } from './AdminFirebaseUsers';
+import { notify, showConfirm, showAlert } from './AlertToastProvider';
 
 interface SavedFileMeta {
   id: string;
@@ -84,7 +86,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [isLoggingIn, setIsLoggingIn] = useState(false);
 
   // Active Admin Sub-tab
-  const [activeTab, setActiveTab] = useState<'donation' | 'users' | 'usage' | 'keypool' | 'telegram' | 'files' | 'password'>('donation');
+  const [activeTab, setActiveTab] = useState<'donation' | 'users' | 'usage' | 'keypool' | 'telegram' | 'subtitles' | 'files' | 'password'>('donation');
 
   // Gemini Multi-Key Pool State
   const [keyPoolKeys, setKeyPoolKeys] = useState<any[]>([]);
@@ -94,12 +96,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     cooldownCount: number;
     errorCount: number;
     strategy: 'round_robin' | 'least_used' | 'random';
+    totalDailyCapacity?: number;
+    totalEstimatedDailyLines?: number;
+    poolCurrentRpm?: number;
+    poolTodayRequests?: number;
   }>({
     totalKeys: 0,
     activeCount: 0,
     cooldownCount: 0,
     errorCount: 0,
     strategy: 'round_robin',
+    totalDailyCapacity: 0,
+    totalEstimatedDailyLines: 0,
+    poolCurrentRpm: 0,
+    poolTodayRequests: 0,
   });
   const [isLoadingKeyPool, setIsLoadingKeyPool] = useState(false);
   const [bulkKeysInput, setBulkKeysInput] = useState('');
@@ -193,6 +203,34 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const [isChangingPass, setIsChangingPass] = useState(false);
   const [passMessage, setPassMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
+  // Subtitles Provider & Cache State
+  const [subtitlesConfig, setSubtitlesConfig] = useState<{
+    opensubtitlesApiKey: string;
+    opensubtitlesApiKeyMasked?: string;
+    opensubtitlesUserAgent: string;
+    subdlApiKey: string;
+    enableServerCache: boolean;
+    hasOpenSubtitlesKey?: boolean;
+  }>({
+    opensubtitlesApiKey: '',
+    opensubtitlesUserAgent: 'AnimeGabarTranslator v1.0.0',
+    subdlApiKey: '',
+    enableServerCache: true,
+  });
+  const [subtitlesStats, setSubtitlesStats] = useState<{
+    cachedFilesCount: number;
+    totalCacheKb: number;
+    subCacheStats?: any;
+    memoryCachedCount: number;
+  }>({
+    cachedFilesCount: 0,
+    totalCacheKb: 0,
+    memoryCachedCount: 0,
+  });
+  const [isSavingSubtitlesConfig, setIsSavingSubtitlesConfig] = useState(false);
+  const [subtitlesSaveMsg, setSubtitlesSaveMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [isClearingCache, setIsClearingCache] = useState(false);
+
   // Sync props if changed
   useEffect(() => {
     if (currentDonationConfig) {
@@ -242,6 +280,87 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     }
   };
 
+  const fetchSubtitlesConfig = async (passToUse?: string) => {
+    const pass = passToUse || adminPassword;
+    if (!pass) return;
+    try {
+      const res = await fetch('/api/admin/subtitles-config', {
+        headers: { 'x-admin-password': pass },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        if (data.config) {
+          setSubtitlesConfig((prev) => ({ ...prev, ...data.config }));
+        }
+        if (data.stats) {
+          setSubtitlesStats(data.stats);
+        }
+      }
+    } catch (err) {
+      console.error('Failed to load subtitles config:', err);
+    }
+  };
+
+  const handleSaveSubtitlesConfig = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!adminPassword) return;
+    setIsSavingSubtitlesConfig(true);
+    setSubtitlesSaveMsg(null);
+    try {
+      const res = await fetch('/api/admin/subtitles-config', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-password': adminPassword,
+        },
+        body: JSON.stringify(subtitlesConfig),
+      });
+      if (res.ok) {
+        setSubtitlesSaveMsg({ type: 'success', text: 'အွန်လိုင်း စာတန်းထိုး Settings များကို သိမ်းဆည်းပြီးပါပြီ' });
+        fetchSubtitlesConfig();
+      } else {
+        const errData = await res.json();
+        setSubtitlesSaveMsg({ type: 'error', text: errData.error || 'သိမ်းဆည်းမှု မအောင်မြင်ပါ' });
+      }
+    } catch (err: any) {
+      setSubtitlesSaveMsg({ type: 'error', text: err.message || 'Error occurred' });
+    } finally {
+      setIsSavingSubtitlesConfig(false);
+      setTimeout(() => setSubtitlesSaveMsg(null), 4000);
+    }
+  };
+
+  const handleClearSubtitleCache = async () => {
+    if (!adminPassword) return;
+    const confirmed = await showConfirm({
+      title: 'Subtitle Cache ရှင်းလင်းရန်',
+      message: 'Server ပေါ်ရှိ ဒေါင်းလုဒ်လုပ်ပြီး Subtitle Cache ဖိုင်များအားလုံးကို ရှင်းလင်းမည်မှာ သေချာပါသလား?',
+      type: 'warning',
+      confirmText: 'Cache ရှင်းမည်',
+    });
+    if (!confirmed) {
+      return;
+    }
+    setIsClearingCache(true);
+    try {
+      const res = await fetch('/api/admin/subtitles-cache/clear', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-password': adminPassword,
+        },
+      });
+      if (res.ok) {
+        notify.success('Subtitle Cache ဖိုင်များအားလုံးကို အောင်မြင်စွာ ရှင်းလင်းပြီးပါပြီ!');
+        fetchSubtitlesConfig();
+      }
+    } catch (err) {
+      console.error('Failed to clear subtitle cache:', err);
+    } finally {
+      setIsClearingCache(false);
+    }
+  };
+
   const fetchGeminiKeys = async (passToUse?: string) => {
     const pass = passToUse || adminPassword;
     if (!pass) return;
@@ -260,6 +379,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           cooldownCount: data.cooldownCount || 0,
           errorCount: data.errorCount || 0,
           strategy: data.strategy || 'round_robin',
+          totalDailyCapacity: data.totalDailyCapacity || (data.totalKeys || 0) * 1500,
+          totalEstimatedDailyLines: data.totalEstimatedDailyLines || (data.totalKeys || 0) * 37500,
+          poolCurrentRpm: data.poolCurrentRpm || 0,
+          poolTodayRequests: data.poolTodayRequests || 0,
         });
       }
     } catch (err) {
@@ -293,6 +416,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
       const data = await res.json();
       if (res.ok && data.success) {
+        notify.success(`Gemini Key အသစ် (${data.addedCount}) ခု Key Pool ထဲသို့ ထည့်သွင်းပြီးပါပြီ!`);
         setAddKeyMessage({
           type: 'success',
           text: `Gemini Key အသစ် (${data.addedCount}) ခု Key Pool ထဲသို့ အောင်မြင်စွာ ထည့်သွင်းပြီးပါပြီ!`,
@@ -328,7 +452,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const handleDeleteKeyPoolItem = async (keyId: string, label: string) => {
-    if (!window.confirm(`"${label}" Key ကို Key Pool ထဲမှ အပြီးဖျက်ရန် သေချာပါသလား?`)) {
+    const confirmed = await showConfirm({
+      title: 'Gemini Key ဖျက်ရန်',
+      message: `"${label}" Key ကို Key Pool ထဲမှ အပြီးဖျက်ရန် သေချာပါသလား?`,
+      type: 'danger',
+      confirmText: 'ဖျက်မည်',
+    });
+    if (!confirmed) {
       return;
     }
     try {
@@ -341,6 +471,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         body: JSON.stringify({ keyId }),
       });
       if (res.ok) {
+        notify.success(`"${label}" Key ကို ဖျက်ပြီးပါပြီ`);
         fetchGeminiKeys();
         setSelectedGeminiKeyIds((prev) => prev.filter((id) => id !== keyId));
       }
@@ -352,10 +483,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   // Batch delete selected Gemini keys
   const handleDeleteSelectedGeminiKeys = async () => {
     if (selectedGeminiKeyIds.length === 0) {
-      alert('ကျေးဇူးပြု၍ ဖျက်လိုသော Key များကို ရွေးချယ်ပေးပါ');
+      notify.warning('ကျေးဇူးပြု၍ ဖျက်လိုသော Key များကို ရွေးချယ်ပေးပါ');
       return;
     }
-    if (!window.confirm(`ရွေးချယ်ထားသော Gemini Key (${selectedGeminiKeyIds.length}) ခုကို Key Pool မှ အပြီးဖျက်ရန် သေချာပါသလား?`)) {
+    const confirmed = await showConfirm({
+      title: 'ရွေးချယ်ထားသော Key များ ဖျက်ရန်',
+      message: `ရွေးချယ်ထားသော Gemini Key (${selectedGeminiKeyIds.length}) ခုကို Key Pool မှ အပြီးဖျက်ရန် သေချာပါသလား?`,
+      type: 'danger',
+      confirmText: 'အကုန်ဖျက်မည်',
+    });
+    if (!confirmed) {
       return;
     }
     setIsBatchDeleting(true);
@@ -372,12 +509,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       if (res.ok) {
         setSelectedGeminiKeyIds([]);
         fetchGeminiKeys();
-        alert(data.message || 'ရွေးချယ်ထားသော Key များကို ဖျက်ပြီးပါပြီ');
+        notify.success(data.message || 'ရွေးချယ်ထားသော Key များကို ဖျက်ပြီးပါပြီ');
       } else {
-        alert(data.error || 'Key များ ဖျက်၍ မရပါ');
+        notify.error(data.error || 'Key များ ဖျက်၍ မရပါ');
       }
     } catch (err: any) {
-      alert(`ဖျက်ရာတွင် အမှားဖြစ်ပေါ်ပါသည်: ${err.message}`);
+      notify.error(err.message || 'Error occurred', 'ဖျက်ရာတွင် အမှားဖြစ်ပေါ်ပါသည်');
     } finally {
       setIsBatchDeleting(false);
     }
@@ -390,11 +527,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     ).length;
 
     if (errorKeysCount === 0) {
-      alert('လက်ရှိ Key Pool ထဲတွင် Invalid / Error တက်နေသော Key မရှိပါ');
+      notify.info('လက်ရှိ Key Pool ထဲတွင် Invalid / Error တက်နေသော Key မရှိပါ');
       return;
     }
 
-    if (!window.confirm(`အလုပ်မလုပ်တော့သော / Error တက်နေသော Gemini Key (${errorKeysCount}) ခုကို ရှင်းလင်းဖျက်ထုတ်ရန် သေချာပါသလား?`)) {
+    const confirmed = await showConfirm({
+      title: 'Error Key များ ရှင်းလင်းရန်',
+      message: `အလုပ်မလုပ်တော့သော / Error တက်နေသော Gemini Key (${errorKeysCount}) ခုကို ရှင်းလင်းဖျက်ထုတ်ရန် သေချာပါသလား?`,
+      type: 'warning',
+      confirmText: 'ရှင်းလင်းမည်',
+    });
+    if (!confirmed) {
       return;
     }
     setIsBatchDeleting(true);
@@ -411,10 +554,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       if (res.ok) {
         setSelectedGeminiKeyIds([]);
         fetchGeminiKeys();
-        alert(data.message || 'Error တက်နေသော Key များကို ရှင်းလင်းပြီးပါပြီ');
+        notify.success(data.message || 'Error တက်နေသော Key များကို ရှင်းလင်းပြီးပါပြီ');
       }
     } catch (err: any) {
-      alert(`ရှင်းလင်းရာတွင် အမှားဖြစ်ပေါ်ပါသည်: ${err.message}`);
+      notify.error(err.message || 'Error occurred', 'ရှင်းလင်းရာတွင် အမှားဖြစ်ပေါ်ပါသည်');
     } finally {
       setIsBatchDeleting(false);
     }
@@ -424,10 +567,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleDeleteAllGeminiKeys = async () => {
     const totalCount = keyPoolKeys?.length || 0;
     if (totalCount === 0) {
-      alert('Key Pool ထဲတွင် Key မရှိပါ');
+      notify.info('Key Pool ထဲတွင် Key မရှိပါ');
       return;
     }
-    if (!window.confirm(`⚠️ သတိပြုရန်!\nKey Pool ထဲရှိ Key အားလုံး (${totalCount} ခု) ကို အပြီးအပိုင် ရှင်းလင်းဖျက်ထုတ်ရန် သေချာပါသလား?`)) {
+    const confirmed = await showConfirm({
+      title: 'Key အားလုံး ဖျက်ရန်',
+      message: `သတိပြုရန်!\nKey Pool ထဲရှိ Key အားလုံး (${totalCount} ခု) ကို အပြီးအပိုင် ရှင်းလင်းဖျက်ထုတ်ရန် သေချာပါသလား?`,
+      type: 'danger',
+      confirmText: 'အားလုံးဖျက်မည်',
+    });
+    if (!confirmed) {
       return;
     }
     setIsBatchDeleting(true);
@@ -444,10 +593,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       if (res.ok) {
         setSelectedGeminiKeyIds([]);
         fetchGeminiKeys();
-        alert(data.message || 'Key Pool ထဲရှိ Key အားလုံးကို ရှင်းလင်းပြီးပါပြီ');
+        notify.success(data.message || 'Key Pool ထဲရှိ Key အားလုံးကို ရှင်းလင်းပြီးပါပြီ');
       }
     } catch (err: any) {
-      alert(`ရှင်းလင်းရာတွင် အမှားဖြစ်ပေါ်ပါသည်: ${err.message}`);
+      notify.error(err.message || 'Error occurred', 'ရှင်းလင်းရာတွင် အမှားဖြစ်ပေါ်ပါသည်');
     } finally {
       setIsBatchDeleting(false);
     }
@@ -467,12 +616,20 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       const data = await res.json();
       fetchGeminiKeys();
       if (data.valid) {
-        alert(`✅ Key စစ်ဆေးမှု အောင်မြင်ပါသည်!\nModel: ${data.testedModel}`);
+        showAlert({
+          title: 'Key စစ်ဆေးမှု အောင်မြင်ပါသည်',
+          message: `စစ်ဆေးချက် အောင်မြင်ပါသည်!\nModel: ${data.testedModel}`,
+          type: 'success',
+        });
       } else {
-        alert(`❌ Key စစ်ဆေးမှု မအောင်မြင်ပါ:\n${data.error}`);
+        showAlert({
+          title: 'Key စစ်ဆေးမှု မအောင်မြင်ပါ',
+          message: data.error || 'Key invalid ဖြစ်နေပါသည်',
+          type: 'error',
+        });
       }
     } catch (err: any) {
-      alert(`စစ်ဆေး၍ မရပါ: ${err.message}`);
+      notify.error(err.message || 'Connection error', 'စစ်ဆေး၍ မရပါ');
     } finally {
       setTestingKeyId(null);
     }
@@ -661,9 +818,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         localStorage.setItem('local_donation_config', JSON.stringify(donationForm));
         setDonationSaveSuccess(true);
         onUpdateDonationConfig(donationForm);
+        notify.success('အလှူငွေ အကောင့်များ သိမ်းဆည်းပြီးပါပြီ');
         setTimeout(() => setDonationSaveSuccess(false), 3000);
       } else {
-        alert(data.error || 'အလှူငွေ အကောင့်များ ပြင်ဆင်ရန် အဆင်မပြေပါ');
+        notify.error(data.error || 'အလှူငွေ အကောင့်များ ပြင်ဆင်ရန် အဆင်မပြေပါ');
       }
     } catch (err) {
       // Static Web Hosting fallback
@@ -671,6 +829,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       localStorage.setItem('local_donation_config', JSON.stringify(donationForm));
       onUpdateDonationConfig(donationForm);
       setDonationSaveSuccess(true);
+      notify.success('အလှူငွေ အကောင့်များ Local သိမ်းဆည်းပြီးပါပြီ');
       setTimeout(() => setDonationSaveSuccess(false), 3000);
     } finally {
       setIsSavingDonation(false);
@@ -694,6 +853,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       if (!contentType || !contentType.includes('application/json')) {
         localStorage.setItem('telegram_config', JSON.stringify(telegramForm));
         setTelegramSaveSuccess(true);
+        notify.success('Telegram ဆက်တင် သိမ်းဆည်းပြီးပါပြီ');
         setTimeout(() => setTelegramSaveSuccess(false), 3000);
         return;
       }
@@ -701,13 +861,15 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       if (res.ok && data.success) {
         localStorage.setItem('telegram_config', JSON.stringify(telegramForm));
         setTelegramSaveSuccess(true);
+        notify.success('Telegram ဆက်တင် သိမ်းဆည်းပြီးပါပြီ');
         setTimeout(() => setTelegramSaveSuccess(false), 3000);
       } else {
-        alert(data.error || 'Telegram ဆက်တင် သိမ်းဆည်းရန် အဆင်မပြေပါ');
+        notify.error(data.error || 'Telegram ဆက်တင် သိမ်းဆည်းရန် အဆင်မပြေပါ');
       }
     } catch (err) {
       localStorage.setItem('telegram_config', JSON.stringify(telegramForm));
       setTelegramSaveSuccess(true);
+      notify.success('Telegram ဆက်တင် သိမ်းဆည်းပြီးပါပြီ');
       setTimeout(() => setTelegramSaveSuccess(false), 3000);
     } finally {
       setIsSavingTelegram(false);
@@ -716,7 +878,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
 
   const handleTestTelegram = async () => {
     if (!telegramForm.botToken?.trim() || !telegramForm.channelId?.trim()) {
-      alert('Telegram Bot Token နှင့် Channel ID ထည့်သွင်းပေးပါ');
+      notify.warning('Telegram Bot Token နှင့် Channel ID ထည့်သွင်းပေးပါ');
       return;
     }
     setIsTestingTelegram(true);
@@ -747,12 +909,14 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               success: true,
               message: `${data.message} (${data.chatTitle || telegramForm.channelId})`,
             });
+            notify.success(`ချိတ်ဆက်မှု အောင်မြင်ပါသည်! (${data.chatTitle || telegramForm.channelId})`);
             return;
           } else {
             setTelegramTestResult({
               success: false,
               message: data.error || 'Telegram ချိတ်ဆက်မှု မအောင်မြင်ပါ',
             });
+            notify.error(data.error || 'Telegram ချိတ်ဆက်မှု မအောင်မြင်ပါ');
             return;
           }
         }
@@ -763,18 +927,30 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       // 2. Direct browser test (Works seamlessly on Vercel, Hostinger, GitHub Pages)
       const directResult = await testTelegramConnection(telegramForm.botToken, telegramForm.channelId);
       setTelegramTestResult(directResult);
+      if (directResult.success) {
+        notify.success(directResult.message);
+      } else {
+        notify.error(directResult.message);
+      }
     } catch (err: any) {
       setTelegramTestResult({
         success: false,
         message: err.message || 'စမ်းသပ်၍ မရပါ',
       });
+      notify.error(err.message || 'စမ်းသပ်၍ မရပါ');
     } finally {
       setIsTestingTelegram(false);
     }
   };
 
   const handleDeleteFile = async (id: string, fileName: string) => {
-    if (!window.confirm(`"${fileName}" ဖိုင်ကို Server ပေါ်မှ အပြီးအပိုင် ဖျက်ရန် သေချာပါသလား?`)) {
+    const confirmed = await showConfirm({
+      title: 'ဖိုင်ဖျက်ရန်',
+      message: `"${fileName}" ဖိုင်ကို Server ပေါ်မှ အပြီးအပိုင် ဖျက်ရန် သေချာပါသလား?`,
+      type: 'danger',
+      confirmText: 'ဖျက်မည်',
+    });
+    if (!confirmed) {
       return;
     }
     try {
@@ -785,11 +961,12 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       if (res.ok) {
         setSavedFiles((prev) => prev.filter((f) => f.id !== id));
         if (previewFile?.meta.id === id) setPreviewFile(null);
+        notify.success(`"${fileName}" ဖိုင်ကို ဖျက်ပြီးပါပြီ`);
       } else {
-        alert('ဖိုင်ဖျက်ရန် အဆင်မပြေပါ');
+        notify.error('ဖိုင်ဖျက်ရန် အဆင်မပြေပါ');
       }
     } catch (err) {
-      alert('Server ချိတ်ဆက်မှု အဆင်မပြေပါ');
+      notify.error('Server ချိတ်ဆက်မှု အဆင်မပြေပါ');
     }
   };
 
@@ -804,10 +981,10 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         const data = await res.json();
         setPreviewFile({ meta, content: data.content });
       } else {
-        alert('ဖိုင်ဖတ်ရှုရန် အဆင်မပြေပါ (Static hosting ပေါ်တွင် မရရှိနိုင်ပါ)');
+        notify.error('ဖိုင်ဖတ်ရှုရန် အဆင်မပြေပါ (Static hosting ပေါ်တွင် မရရှိနိုင်ပါ)');
       }
     } catch (err) {
-      alert('Server ချိတ်ဆက်မှု အဆင်မပြေပါ');
+      notify.error('Server ချိတ်ဆက်မှု အဆင်မပြေပါ');
     } finally {
       setIsPreviewLoading(false);
     }
@@ -1008,7 +1185,13 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   };
 
   const handleResetKeyUsage = async (keyId: string) => {
-    if (!window.confirm('ဤ Key ၏ အသုံးပြုပြီး စာကြောင်းရေကို 0 သို့ ပြန်လည်စတင် (Reset) ရန် သေချာပါသလား?')) {
+    const confirmed = await showConfirm({
+      title: 'အသုံးပြုမှု Reset လုပ်ရန်',
+      message: 'ဤ Key ၏ အသုံးပြုပြီး စာကြောင်းရေကို 0 သို့ ပြန်လည်စတင် (Reset) ရန် သေချာပါသလား?',
+      type: 'warning',
+      confirmText: 'Reset လုပ်မည်',
+    });
+    if (!confirmed) {
       return;
     }
     try {
@@ -1035,10 +1218,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     const updated = { ...usageConfig, accessKeys: updatedList };
     setUsageConfig(updated);
     saveLocalUsageConfig(updated);
+    notify.success('Key အသုံးပြုမှု Reset လုပ်ပြီးပါပြီ');
   };
 
   const handleDeleteKey = async (keyId: string, code: string) => {
-    if (!window.confirm(`"${code}" Access Key ကို အပြီးအပိုင် ဖျက်ပစ်ရန် သေချာပါသလား?`)) {
+    const confirmed = await showConfirm({
+      title: 'Access Key ဖျက်ရန်',
+      message: `"${code}" Access Key ကို အပြီးအပိုင် ဖျက်ပစ်ရန် သေချာပါသလား?`,
+      type: 'danger',
+      confirmText: 'ဖျက်မည်',
+    });
+    if (!confirmed) {
       return;
     }
     try {
@@ -1063,15 +1253,22 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     setUsageConfig(updated);
     saveLocalUsageConfig(updated);
     setSelectedVipKeyIds((prev) => prev.filter((id) => id !== keyId));
+    notify.success(`"${code}" Access Key ကို ဖျက်ပစ်ပြီးပါပြီ`);
   };
 
   // Batch delete selected VIP keys
   const handleDeleteSelectedVipKeys = async () => {
     if (selectedVipKeyIds.length === 0) {
-      alert('ကျေးဇူးပြု၍ ဖျက်လိုသော VIP Key များကို ရွေးချယ်ပေးပါ');
+      notify.warning('ကျေးဇူးပြု၍ ဖျက်လိုသော VIP Key များကို ရွေးချယ်ပေးပါ');
       return;
     }
-    if (!window.confirm(`ရွေးချယ်ထားသော VIP Key (${selectedVipKeyIds.length}) ခုကို အပြီးဖျက်ရန် သေချာပါသလား?`)) {
+    const confirmed = await showConfirm({
+      title: 'ရွေးချယ်ထားသော VIP Key များ ဖျက်ရန်',
+      message: `ရွေးချယ်ထားသော VIP Key (${selectedVipKeyIds.length}) ခုကို အပြီးဖျက်ရန် သေချာပါသလား?`,
+      type: 'danger',
+      confirmText: 'အကုန်ဖျက်မည်',
+    });
+    if (!confirmed) {
       return;
     }
     setIsBatchDeleting(true);
@@ -1087,7 +1284,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         });
         const data = await res.json();
         if (res.ok) {
-          alert(data.message || 'VIP Key များ ဖျက်ပြီးပါပြီ');
+          notify.success(data.message || 'VIP Key များ ဖျက်ပြီးပါပြီ');
         }
       }
       const updatedList = (usageConfig.accessKeys || []).filter(
@@ -1097,8 +1294,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setUsageConfig(updated);
       saveLocalUsageConfig(updated);
       setSelectedVipKeyIds([]);
+      notify.success('ရွေးချယ်ထားသော VIP Key များ ဖျက်ပြီးပါပြီ');
     } catch (err: any) {
-      alert(`ဖျက်ရာတွင် အမှားဖြစ်ပေါ်ပါသည်: ${err.message}`);
+      notify.error(err.message || 'Error occurred', 'ဖျက်ရာတွင် အမှားဖြစ်ပေါ်ပါသည်');
     } finally {
       setIsBatchDeleting(false);
     }
@@ -1114,11 +1312,17 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     });
 
     if (expiredKeys.length === 0) {
-      alert('သက်တမ်းကုန်ဆုံးထားသော သို့မဟုတ် စာကြောင်းရေပြည့်သွားသော VIP Key မရှိပါ');
+      notify.info('သက်တမ်းကုန်ဆုံးထားသော သို့မဟုတ် စာကြောင်းရေပြည့်သွားသော VIP Key မရှိပါ');
       return;
     }
 
-    if (!window.confirm(`သက်တမ်းကုန်ဆုံးပြီး/အသုံးပြုခွင့်ကုန်နေသော VIP Key (${expiredKeys.length}) ခုကို ရှင်းလင်းဖျက်ထုတ်ရန် သေချာပါသလား?`)) {
+    const confirmed = await showConfirm({
+      title: 'သက်တမ်းကုန် VIP Key များ ရှင်းလင်းရန်',
+      message: `သက်တမ်းကုန်ဆုံးပြီး/အသုံးပြုခွင့်ကုန်နေသော VIP Key (${expiredKeys.length}) ခုကို ရှင်းလင်းဖျက်ထုတ်ရန် သေချာပါသလား?`,
+      type: 'warning',
+      confirmText: 'ရှင်းလင်းမည်',
+    });
+    if (!confirmed) {
       return;
     }
     setIsBatchDeleting(true);
@@ -1142,9 +1346,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setUsageConfig(updated);
       saveLocalUsageConfig(updated);
       setSelectedVipKeyIds([]);
-      alert(`${expiredKeys.length} ခုသော သက်တမ်းကုန် VIP Key များကို ရှင်းလင်းပြီးပါပြီ`);
+      notify.success(`${expiredKeys.length} ခုသော သက်တမ်းကုန် VIP Key များကို ရှင်းလင်းပြီးပါပြီ`);
     } catch (err: any) {
-      alert(`ရှင်းလင်းရာတွင် အမှားဖြစ်ပေါ်ပါသည်: ${err.message}`);
+      notify.error(err.message || 'Error occurred', 'ရှင်းလင်းရာတွင် အမှားဖြစ်ပေါ်ပါသည်');
     } finally {
       setIsBatchDeleting(false);
     }
@@ -1154,10 +1358,16 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
   const handleDeleteAllVipKeys = async () => {
     const totalCount = usageConfig.accessKeys?.length || 0;
     if (totalCount === 0) {
-      alert('VIP Key စာရင်းတွင် Key မရှိပါ');
+      notify.info('VIP Key စာရင်းတွင် Key မရှိပါ');
       return;
     }
-    if (!window.confirm(`⚠️ သတိပြုရန်!\nVIP Key အားလုံး (${totalCount} ခု) ကို အပြီးအပိုင် ရှင်းလင်းဖျက်ထုတ်ရန် သေချာပါသလား?`)) {
+    const confirmed = await showConfirm({
+      title: 'VIP Key အားလုံး ဖျက်ရန်',
+      message: `သတိပြုရန်!\nVIP Key အားလုံး (${totalCount} ခု) ကို အပြီးအပိုင် ရှင်းလင်းဖျက်ထုတ်ရန် သေချာပါသလား?`,
+      type: 'danger',
+      confirmText: 'အားလုံးဖျက်မည်',
+    });
+    if (!confirmed) {
       return;
     }
     setIsBatchDeleting(true);
@@ -1176,9 +1386,9 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       setUsageConfig(updated);
       saveLocalUsageConfig(updated);
       setSelectedVipKeyIds([]);
-      alert('VIP Key အားလုံးကို ရှင်းလင်းဖျက်ပစ်ပြီးပါပြီ');
+      notify.success('VIP Key အားလုံးကို ရှင်းလင်းဖျက်ပစ်ပြီးပါပြီ');
     } catch (err: any) {
-      alert(`ဖျက်ရာတွင် အမှားဖြစ်ပေါ်ပါသည်: ${err.message}`);
+      notify.error(err.message || 'Error occurred', 'ဖျက်ရာတွင် အမှားဖြစ်ပေါ်ပါသည်');
     } finally {
       setIsBatchDeleting(false);
     }
@@ -1404,6 +1614,21 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         >
           <Send className="w-4 h-4 text-sky-400" />
           <span>Telegram Channel ချိတ်ဆက်မှု</span>
+        </button>
+
+        <button
+          onClick={() => {
+            setActiveTab('subtitles');
+            fetchSubtitlesConfig();
+          }}
+          className={`flex items-center space-x-2 px-4 py-3 border-b-2 text-xs font-bold transition whitespace-nowrap ${
+            activeTab === 'subtitles'
+              ? 'border-teal-500 text-teal-400 bg-teal-500/5'
+              : 'border-transparent text-slate-400 hover:text-slate-200'
+          }`}
+        >
+          <Globe className="w-4 h-4 text-teal-400" />
+          <span>အွန်လိုင်း Subtitle Providers & Cache</span>
         </button>
 
         <button
@@ -1706,7 +1931,7 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           <div className="bg-slate-950/60 p-4 rounded-2xl border border-amber-500/20 space-y-3">
             <div className="flex items-center justify-between">
               <span className="text-xs font-bold text-amber-300 flex items-center space-x-1.5">
-                <Sparkles className="w-4 h-4 text-amber-400" />
+                <Crown className="w-4 h-4 text-amber-400" />
                 <span>1-Click အမြန် VIP Key ဖန်တီးနည်း ပုံစံများ (Quick Presets)</span>
               </span>
               <span className="text-[11px] text-slate-400">ပုံစံတစ်ခုကို နှိပ်ပါက အောက်ပါ Form တွင် ချက်ချင်း ဖြည့်သွင်းပေးပါမည်</span>
@@ -2243,6 +2468,106 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
             </div>
           </div>
 
+          {/* Real-time Rate Limit & Quota Capacity Monitor Card */}
+          <div className="bg-gradient-to-r from-purple-950/40 via-[#0d101a] to-indigo-950/40 border border-purple-500/30 rounded-2xl p-4.5 space-y-3.5 shadow-md">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-800/80 pb-3">
+              <div className="flex items-center space-x-2">
+                <Activity className="w-4 h-4 text-emerald-400 animate-pulse" />
+                <span className="text-xs font-bold text-slate-100">Live Rate Limit & Quota Capacity Monitor</span>
+                <span className="text-[10px] bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 px-2 py-0.5 rounded-full font-mono font-bold">
+                  Gemini Free Tier (15 RPM / 1,500 RPD)
+                </span>
+              </div>
+              <div className="text-[11px] text-slate-400 font-mono">
+                Key Pool Auto-Rotation & Cooldown
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+              {/* Card 1: Daily Requests Capacity */}
+              <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 space-y-2">
+                <div className="text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Pool Daily Capacity (RPD)</span>
+                  <span className="text-purple-400 font-mono font-bold">
+                    {(keyPoolStats.totalDailyCapacity || keyPoolStats.totalKeys * 1500).toLocaleString()} Calls / Day
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-200 font-mono font-semibold">
+                    {keyPoolStats.poolTodayRequests || 0} / {(keyPoolStats.totalDailyCapacity || keyPoolStats.totalKeys * 1500).toLocaleString()} Calls Used
+                  </span>
+                  <span className="text-slate-400 text-[10px]">
+                    {Math.max(0, (keyPoolStats.totalDailyCapacity || keyPoolStats.totalKeys * 1500) - (keyPoolStats.poolTodayRequests || 0)).toLocaleString()} Calls Left
+                  </span>
+                </div>
+                <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden">
+                  <div
+                    className="h-full bg-gradient-to-r from-purple-500 to-indigo-500 rounded-full transition-all duration-500"
+                    style={{
+                      width: `${Math.min(100, Math.round(((keyPoolStats.poolTodayRequests || 0) / Math.max(1, keyPoolStats.totalDailyCapacity || keyPoolStats.totalKeys * 1500)) * 100))}%`,
+                    }}
+                  />
+                </div>
+                <div className="text-[10px] text-slate-500">
+                  Key တစ်ခုလျှင် တစ်ရက် 1,500 Requests ခွင့်ပြုပါသည်
+                </div>
+              </div>
+
+              {/* Card 2: Estimated Subtitle Lines Capacity */}
+              <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 space-y-2">
+                <div className="text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Est. Subtitle Lines / Day</span>
+                  <span className="text-emerald-400 font-mono font-bold">
+                    ~{(keyPoolStats.totalEstimatedDailyLines || keyPoolStats.totalKeys * 37500).toLocaleString()} Lines
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-emerald-300 font-semibold">
+                    ~{Math.floor((keyPoolStats.totalEstimatedDailyLines || keyPoolStats.totalKeys * 37500) / 350)} Anime Episodes
+                  </span>
+                  <span className="text-slate-400 text-[10px]">25 Lines / Call</span>
+                </div>
+                <div className="text-[10px] text-emerald-400/90 leading-relaxed bg-emerald-950/20 border border-emerald-500/20 p-2 rounded-lg">
+                  💡 Key ၁၀ ခု ထည့်ထားပါက တစ်ရက်လျှင် စာကြောင်းရေ ၃ သိန်းကျော် (Anime အပိုင်း ၁၀၀ ကျော်) အခမဲ့ ဘာသာပြန်နိုင်ပါသည်။
+                </div>
+              </div>
+
+              {/* Card 3: Live RPM Traffic */}
+              <div className="bg-slate-900/90 border border-slate-800 rounded-xl p-3.5 space-y-2">
+                <div className="text-[11px] text-slate-400 flex items-center justify-between">
+                  <span>Live Pool RPM Traffic (Active 60s)</span>
+                  <span className="text-amber-400 font-mono font-bold">
+                    {keyPoolStats.poolCurrentRpm || 0} / {Math.max(15, keyPoolStats.totalKeys * 15)} RPM
+                  </span>
+                </div>
+                <div className="flex items-center justify-between text-xs">
+                  <span className="text-slate-200 text-[11px] font-medium flex items-center space-x-1.5">
+                    <span className={`w-2 h-2 rounded-full ${(keyPoolStats.poolCurrentRpm || 0) > 0 ? 'bg-emerald-400 animate-ping' : 'bg-slate-500'}`} />
+                    <span>{(keyPoolStats.poolCurrentRpm || 0) > 0 ? 'Active Translating' : 'Idle (ခေတ္တနားနေ)'}</span>
+                  </span>
+                  <span className="text-slate-400 text-[10px]">Key Pool အဆင့် အလှည့်ကျ</span>
+                </div>
+                <div className="w-full h-2 bg-slate-950 rounded-full overflow-hidden">
+                  <div
+                    className={`h-full rounded-full transition-all duration-500 ${
+                      (keyPoolStats.poolCurrentRpm || 0) > (keyPoolStats.totalKeys * 12)
+                        ? 'bg-rose-500'
+                        : (keyPoolStats.poolCurrentRpm || 0) > (keyPoolStats.totalKeys * 7)
+                        ? 'bg-amber-500'
+                        : 'bg-emerald-500'
+                    }`}
+                    style={{
+                      width: `${Math.min(100, Math.round(((keyPoolStats.poolCurrentRpm || 0) / Math.max(1, keyPoolStats.totalKeys * 15)) * 100))}%`,
+                    }}
+                  />
+                </div>
+                <div className="text-[10px] text-slate-500">
+                  Rate Limit ကျော်ပါက ၁ မိနစ် Auto Cooldown လုပ်ပေးပါသည်
+                </div>
+              </div>
+            </div>
+          </div>
+
           {/* Strategy Selection & Load Balancing Options */}
           <div className="bg-slate-950/60 border border-slate-800/80 rounded-xl p-4 space-y-3">
             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -2478,10 +2803,12 @@ AIzaSyDxxx... (Key #3)`}
                             title="အားလုံး ရွေးမည်"
                           />
                         </th>
-                        <th className="p-3 pl-2">Key Label & Masked Key</th>
-                        <th className="p-3">Status</th>
-                        <th className="p-3">Calls & Stats</th>
-                        <th className="p-3">Last Used</th>
+                        <th className="p-3 pl-2">Key Label & Masked</th>
+                        <th className="p-3">Rate Limit Status</th>
+                        <th className="p-3 min-w-[130px]">1-Min RPM (Limit 15)</th>
+                        <th className="p-3 min-w-[140px]">Today Quota (Limit 1.5K)</th>
+                        <th className="p-3">Latency & Calls</th>
+                        <th className="p-3">Last Active</th>
                         <th className="p-3 text-right pr-4">Actions</th>
                       </tr>
                     </thead>
@@ -2489,6 +2816,14 @@ AIzaSyDxxx... (Key #3)`}
                       {keyPoolKeys.map((item) => {
                         const isTesting = testingKeyId === item.id;
                         const isSelected = selectedGeminiKeyIds.includes(item.id);
+                        const currentRpm = item.currentRpm || 0;
+                        const rpmPercent = Math.min(100, Math.round((currentRpm / 15) * 100));
+                        const todayReq = item.todayRequests || 0;
+                        const rpdPercent = Math.min(100, Math.round((todayReq / 1500) * 100));
+                        const linesLeft = item.estimatedRemainingLines !== undefined 
+                          ? item.estimatedRemainingLines 
+                          : Math.max(0, 1500 - todayReq) * 25;
+
                         return (
                           <tr
                             key={item.id}
@@ -2513,21 +2848,21 @@ AIzaSyDxxx... (Key #3)`}
                               />
                             </td>
                             <td className="p-3 pl-2">
-                              <div className="font-semibold text-slate-200">{item.label}</div>
+                              <div className="font-semibold text-slate-200 flex items-center space-x-1.5">
+                                <span>{item.label}</span>
+                                {item.verifiedModel && (
+                                  <span className="text-[9px] bg-purple-500/10 text-purple-300 px-1.5 py-0.2 rounded border border-purple-500/20">
+                                    {item.verifiedModel.replace('gemini-', '')}
+                                  </span>
+                                )}
+                              </div>
                               <div className="font-mono text-[11px] text-slate-400 mt-0.5 flex items-center space-x-2">
                                 <span>{item.maskedKey}</span>
                               </div>
                             </td>
 
                             <td className="p-3">
-                              {item.status === 'active' && (
-                                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
-                                  <CheckCircle2 className="w-3 h-3" />
-                                  <span>Active</span>
-                                </span>
-                              )}
-
-                              {item.status === 'cooldown' && (
+                              {item.status === 'cooldown' ? (
                                 <div className="inline-flex flex-col">
                                   <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">
                                     <Clock className="w-3 h-3 animate-spin" />
@@ -2539,9 +2874,7 @@ AIzaSyDxxx... (Key #3)`}
                                     </span>
                                   )}
                                 </div>
-                              )}
-
-                              {item.status === 'error' && (
+                              ) : item.status === 'error' ? (
                                 <div className="inline-flex flex-col">
                                   <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-400 border border-rose-500/20">
                                     <AlertTriangle className="w-3 h-3" />
@@ -2553,28 +2886,95 @@ AIzaSyDxxx... (Key #3)`}
                                     </span>
                                   )}
                                 </div>
-                              )}
-
-                              {item.status === 'disabled' && (
+                              ) : item.status === 'disabled' ? (
                                 <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-800 text-slate-400 border border-slate-700">
                                   <span>Disabled</span>
+                                </span>
+                              ) : item.rateLimitStatus === 'exhausted' ? (
+                                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-rose-500/10 text-rose-300 border border-rose-500/30">
+                                  <AlertCircle className="w-3 h-3" />
+                                  <span>Quota Met (1.5K)</span>
+                                </span>
+                              ) : item.rateLimitStatus === 'high_traffic' || item.rateLimitStatus === 'near_limit' ? (
+                                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-amber-500/10 text-amber-300 border border-amber-500/30">
+                                  <Zap className="w-3 h-3" />
+                                  <span>High RPM ({currentRpm}/15)</span>
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center space-x-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">
+                                  <CheckCircle2 className="w-3 h-3" />
+                                  <span>Healthy</span>
                                 </span>
                               )}
                             </td>
 
+                            {/* 1-Minute RPM */}
                             <td className="p-3">
-                              <div className="flex items-center space-x-3 text-[11px]">
-                                <span className="text-emerald-400 font-semibold" title="Success Count">
-                                  ✓ {item.successCount || 0}
-                                </span>
-                                <span className="text-rose-400 font-semibold" title="Error Count">
-                                  ✕ {item.errorCount || 0}
-                                </span>
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between text-[11px] font-mono">
+                                  <span className={currentRpm > 12 ? 'text-rose-400 font-bold' : currentRpm > 7 ? 'text-amber-400' : 'text-slate-300'}>
+                                    {currentRpm} / 15
+                                  </span>
+                                  <span className="text-[10px] text-slate-500">RPM</span>
+                                </div>
+                                <div className="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+                                  <div
+                                    className={`h-full rounded-full transition-all duration-300 ${
+                                      currentRpm > 12 ? 'bg-rose-500' : currentRpm > 7 ? 'bg-amber-400' : 'bg-emerald-400'
+                                    }`}
+                                    style={{ width: `${rpmPercent}%` }}
+                                  />
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Today Quota (RPD) */}
+                            <td className="p-3">
+                              <div className="space-y-1">
+                                <div className="flex items-center justify-between text-[11px] font-mono">
+                                  <span className={todayReq >= 1400 ? 'text-rose-400 font-bold' : 'text-slate-300'}>
+                                    {todayReq.toLocaleString()} / 1.5K
+                                  </span>
+                                  <span className="text-[10px] text-slate-500">{rpdPercent}%</span>
+                                </div>
+                                <div className="w-full h-1.5 bg-slate-900 rounded-full overflow-hidden border border-slate-800">
+                                  <div
+                                    className={`h-full rounded-full transition-all duration-300 ${
+                                      todayReq >= 1400 ? 'bg-rose-500' : 'bg-purple-500'
+                                    }`}
+                                    style={{ width: `${rpdPercent}%` }}
+                                  />
+                                </div>
+                                <div className="text-[10px] text-slate-400 flex items-center justify-between">
+                                  <span>~{linesLeft.toLocaleString()} lines left</span>
+                                </div>
+                              </div>
+                            </td>
+
+                            {/* Latency & Calls */}
+                            <td className="p-3">
+                              <div className="space-y-0.5 text-[11px]">
+                                {item.lastLatencyMs ? (
+                                  <div className="text-emerald-400 font-mono text-[10px] flex items-center space-x-1">
+                                    <Zap className="w-3 h-3 text-amber-400" />
+                                    <span>⚡ {item.lastLatencyMs}ms</span>
+                                  </div>
+                                ) : (
+                                  <span className="text-slate-500 text-[10px]">-</span>
+                                )}
+                                <div className="flex items-center space-x-2 text-[10px] font-mono">
+                                  <span className="text-emerald-400 font-semibold" title="Success Count">
+                                    ✓ {item.successCount || 0}
+                                  </span>
+                                  <span className="text-rose-400 font-semibold" title="Error Count">
+                                    ✕ {item.errorCount || 0}
+                                  </span>
+                                </div>
                               </div>
                             </td>
 
                             <td className="p-3 text-slate-400 text-[11px]">
-                              {item.lastUsedAt ? new Date(item.lastUsedAt).toLocaleTimeString() : 'မသုံးရသေး'}
+                              {item.lastUsedAt ? new Date(item.lastUsedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }) : 'မသုံးရသေး'}
                             </td>
 
                             <td className="p-3 text-right pr-4">
@@ -2942,6 +3342,282 @@ AIzaSyDxxx... (Key #3)`}
         </div>
       )}
 
+      {/* Tab: Online Subtitle Providers & Cache */}
+      {activeTab === 'subtitles' && (
+        <div className="space-y-6">
+          {/* Top Info Banner */}
+          <div className="bg-gradient-to-r from-teal-900/30 via-slate-900 to-indigo-900/20 border border-teal-500/30 rounded-2xl p-5 shadow-sm">
+            <div className="flex items-start space-x-3.5">
+              <div className="p-2.5 bg-teal-500/10 text-teal-400 rounded-xl border border-teal-500/20 mt-0.5">
+                <Globe className="w-5 h-5" />
+              </div>
+              <div className="space-y-1">
+                <h2 className="text-sm font-bold text-slate-100 flex items-center space-x-2">
+                  <span>အွန်လိုင်း Subtitle Providers & Server Cache စီမံခန့်ခွဲမှု</span>
+                  <span className="px-2 py-0.5 text-[10px] font-bold bg-teal-500/20 text-teal-300 rounded-full border border-teal-500/30">
+                    OpenSubtitles.com API
+                  </span>
+                </h2>
+                <p className="text-xs text-slate-300 leading-relaxed">
+                  Anime/Movie ဇာတ်ကားများအတွက် OpenSubtitles.com မှ မူရင်း English/Japanese SRT စာတန်းထိုးများကို User များ 1-Click တိုက်ရိုက် ရှာဖွေပြီး Translation Workspace ထဲသို့ ထည့်သွင်းနိုင်စေရန် စီမံပေးသည့် စနစ်ဖြစ်ပါသည်။
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Stats Grid */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3.5">
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-1 shadow-sm">
+              <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+                <span>ဆာဗာ Cache ဖိုင်စုစုပေါင်း</span>
+                <FileText className="w-4 h-4 text-teal-400" />
+              </div>
+              <div className="text-xl font-extrabold text-slate-100 font-mono">
+                {subtitlesStats.cachedFilesCount.toLocaleString()} <span className="text-xs font-normal text-slate-400">files</span>
+              </div>
+              <p className="text-[11px] text-teal-400">အသုံးပြုပြီး ပြန်လည်ယူသုံးထားသော SRT များ</p>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-1 shadow-sm">
+              <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+                <span>Disk Cache ပမာဏ</span>
+                <Layers className="w-4 h-4 text-indigo-400" />
+              </div>
+              <div className="text-xl font-extrabold text-slate-100 font-mono">
+                {subtitlesStats.totalCacheKb.toLocaleString()} <span className="text-xs font-normal text-slate-400">KB</span>
+              </div>
+              <p className="text-[11px] text-slate-400">
+                {subtitlesStats.totalCacheKb > 1024
+                  ? `${(subtitlesStats.totalCacheKb / 1024).toFixed(2)} MB နေရာယူထားပါသည်`
+                  : 'နေရာယူမှု အလွန်နည်းပါးပါသည်'}
+              </p>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-1 shadow-sm">
+              <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+                <span>Cache Hits (Bandwidth သက်သာမှု)</span>
+                <Zap className="w-4 h-4 text-amber-400" />
+              </div>
+              <div className="text-xl font-extrabold text-amber-400 font-mono">
+                {subtitlesStats.subCacheStats?.cacheHits || 0} <span className="text-xs font-normal text-slate-400">ကြိမ်</span>
+              </div>
+              <p className="text-[11px] text-slate-400">API Quota ကုန်ဆုံးမှု သက်သာစေပါသည်</p>
+            </div>
+
+            <div className="bg-slate-900 border border-slate-800 rounded-xl p-4 space-y-1 shadow-sm">
+              <div className="flex items-center justify-between text-slate-400 text-xs font-medium">
+                <span>API Status & Key</span>
+                <ShieldCheck className="w-4 h-4 text-emerald-400" />
+              </div>
+              <div className="text-sm font-bold text-slate-100">
+                {subtitlesConfig.hasOpenSubtitlesKey ? (
+                  <span className="text-emerald-400 flex items-center space-x-1">
+                    <CheckCircle2 className="w-4 h-4" />
+                    <span>API Key ချိတ်ဆက်ပြီး</span>
+                  </span>
+                ) : (
+                  <span className="text-amber-400 flex items-center space-x-1">
+                    <AlertTriangle className="w-4 h-4" />
+                    <span>Default Key (Limited)</span>
+                  </span>
+                )}
+              </div>
+              <p className="text-[11px] text-slate-400">
+                {subtitlesConfig.hasOpenSubtitlesKey ? '100-200 downloads/day' : 'အကောင့်ဖွင့်ပြီး Key ထည့်သွင်းပါ'}
+              </p>
+            </div>
+          </div>
+
+          {/* Form & Cache Management */}
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            {/* Configuration Form */}
+            <div className="lg:col-span-2 bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-5 shadow-sm">
+              <div className="border-b border-slate-800 pb-3 flex items-center justify-between">
+                <div>
+                  <h3 className="text-sm font-bold text-slate-100 flex items-center space-x-2">
+                    <Sliders className="w-4 h-4 text-teal-400" />
+                    <span>OpenSubtitles & SubDL API Settings</span>
+                  </h3>
+                  <p className="text-xs text-slate-400 mt-0.5">
+                    OpenSubtitles.com API Credentials ထည့်သွင်းသတ်မှတ်ပါ
+                  </p>
+                </div>
+              </div>
+
+              <form onSubmit={handleSaveSubtitlesConfig} className="space-y-4">
+                <div>
+                  <div className="flex items-center justify-between mb-1.5">
+                    <label className="text-xs font-medium text-slate-300">
+                      OpenSubtitles API-Key
+                    </label>
+                    <a
+                      href="https://www.opensubtitles.com/en/consumers"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="text-[11px] text-teal-400 hover:underline flex items-center space-x-1"
+                    >
+                      <span>Free API Key ရယူရန် (opensubtitles.com)</span>
+                      <ExternalLink className="w-3 h-3" />
+                    </a>
+                  </div>
+                  <input
+                    type="text"
+                    value={subtitlesConfig.opensubtitlesApiKey}
+                    onChange={(e) =>
+                      setSubtitlesConfig((prev) => ({ ...prev, opensubtitlesApiKey: e.target.value }))
+                    }
+                    placeholder="ဥပမာ - your_opensubtitles_api_key_here"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-teal-500 transition"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    * OpenSubtitles Consumer Account တွင် Free API Key ယူပါက တစ်ရက်လျှင် 100~200 Subtitles ဒေါင်းလုဒ် အခမဲ့ ရရှိပါမည်။
+                  </p>
+                </div>
+
+                <div>
+                  <label className="text-xs font-medium text-slate-300 mb-1.5 block">
+                    User-Agent Header
+                  </label>
+                  <input
+                    type="text"
+                    value={subtitlesConfig.opensubtitlesUserAgent}
+                    onChange={(e) =>
+                      setSubtitlesConfig((prev) => ({ ...prev, opensubtitlesUserAgent: e.target.value }))
+                    }
+                    placeholder="AnimeGabarTranslator v1.0.0"
+                    className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-slate-100 font-mono focus:outline-none focus:border-teal-500 transition"
+                  />
+                  <p className="text-[11px] text-slate-400 mt-1">
+                    OpenSubtitles မှ Request ခွဲခြားရန် အသုံးပြုသည့် App Identifier ဖြစ်ပါသည်။
+                  </p>
+                </div>
+
+                <div className="pt-2 border-t border-slate-800">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <div className="text-xs font-medium text-slate-200 flex items-center space-x-2">
+                        <span>Server-Side Subtitle Caching စနစ်</span>
+                        <span className="px-2 py-0.5 text-[10px] font-bold bg-emerald-500/10 text-emerald-400 rounded border border-emerald-500/20">
+                          Recommended
+                        </span>
+                      </div>
+                      <p className="text-[11px] text-slate-400 mt-0.5">
+                        User တစ်ဦး ဒေါင်းပြီးသား Subtitle ကို Server ပေါ်တွင် Cache လုပ်ထားခြင်းဖြင့် အခြား User များ ထပ်မံဒေါင်းရာတွင် OpenSubtitles API Quota လုံးဝမကုန်ဘဲ ချက်ချင်း ရရှိစေပါမည်။
+                      </p>
+                    </div>
+
+                    <label className="relative inline-flex items-center cursor-pointer ml-4">
+                      <input
+                        type="checkbox"
+                        checked={subtitlesConfig.enableServerCache}
+                        onChange={(e) =>
+                          setSubtitlesConfig((prev) => ({ ...prev, enableServerCache: e.target.checked }))
+                        }
+                        className="sr-only peer"
+                      />
+                      <div className="w-11 h-6 bg-slate-800 peer-focus:outline-none rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-teal-600"></div>
+                    </label>
+                  </div>
+                </div>
+
+                {subtitlesSaveMsg && (
+                  <div
+                    className={`p-3 rounded-xl text-xs flex items-center space-x-2 ${
+                      subtitlesSaveMsg.type === 'success'
+                        ? 'bg-emerald-500/10 border border-emerald-500/20 text-emerald-300'
+                        : 'bg-rose-500/10 border border-rose-500/20 text-rose-300'
+                    }`}
+                  >
+                    {subtitlesSaveMsg.type === 'success' ? (
+                      <CheckCircle2 className="w-4 h-4 flex-shrink-0" />
+                    ) : (
+                      <AlertCircle className="w-4 h-4 flex-shrink-0" />
+                    )}
+                    <span>{subtitlesSaveMsg.text}</span>
+                  </div>
+                )}
+
+                <div className="pt-2 flex justify-end">
+                  <button
+                    type="submit"
+                    disabled={isSavingSubtitlesConfig}
+                    className="px-5 py-2.5 bg-teal-600 hover:bg-teal-500 disabled:opacity-50 text-white font-semibold text-xs rounded-xl shadow-lg transition flex items-center space-x-2"
+                  >
+                    {isSavingSubtitlesConfig ? (
+                      <>
+                        <RefreshCw className="w-4 h-4 animate-spin" />
+                        <span>သိမ်းဆည်းနေပါသည်...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Save className="w-4 h-4" />
+                        <span>Subtitle Settings များ သိမ်းဆည်းမည်</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              </form>
+            </div>
+
+            {/* Cache Actions & Help */}
+            <div className="space-y-4">
+              <div className="bg-slate-900 border border-slate-800 rounded-2xl p-5 space-y-4 shadow-sm">
+                <div className="border-b border-slate-800 pb-2">
+                  <h3 className="text-xs font-bold text-slate-100 flex items-center space-x-1.5">
+                    <Trash2 className="w-3.5 h-3.5 text-rose-400" />
+                    <span>Cache ရှင်းလင်းခြင်း (Cache Maintenance)</span>
+                  </h3>
+                </div>
+
+                <p className="text-xs text-slate-400 leading-relaxed">
+                  Server ပေါ်တွင် Cache သိမ်းထားသော SRT Subtitle ဖိုင်များကို ရှင်းလင်းလိုပါက အောက်ပါခလုတ်ကို နှိပ်ပါ။
+                </p>
+
+                <div className="bg-slate-950 p-3 rounded-xl border border-slate-800 space-y-1.5 text-[11px] font-mono text-slate-300">
+                  <div className="flex justify-between">
+                    <span>Cache Files:</span>
+                    <span className="text-teal-400 font-bold">{subtitlesStats.cachedFilesCount} files</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span>Memory Cache:</span>
+                    <span className="text-indigo-400 font-bold">{subtitlesStats.memoryCachedCount || 0} active</span>
+                  </div>
+                </div>
+
+                <button
+                  type="button"
+                  onClick={handleClearSubtitleCache}
+                  disabled={isClearingCache || subtitlesStats.cachedFilesCount === 0}
+                  className="w-full py-2.5 bg-rose-500/10 hover:bg-rose-500/20 text-rose-400 disabled:opacity-40 border border-rose-500/20 text-xs font-semibold rounded-xl transition flex items-center justify-center space-x-2"
+                >
+                  <Trash2 className="w-4 h-4" />
+                  <span>{isClearingCache ? 'ရှင်းလင်းနေပါသည်...' : 'Subtitle Cache အားလုံး ဖျက်မည်'}</span>
+                </button>
+              </div>
+
+              {/* Tips Card */}
+              <div className="bg-slate-900/60 border border-slate-800/80 rounded-2xl p-5 space-y-2 text-xs text-slate-400">
+                <div className="font-bold text-slate-200 flex items-center space-x-1.5">
+                  <HelpCircle className="w-4 h-4 text-teal-400" />
+                  <span>OpenSubtitles Quota ပိုမိုရရှိရန် နည်းလမ်းများ</span>
+                </div>
+                <ul className="list-disc list-inside space-y-1.5 text-[11px] text-slate-300 leading-relaxed pt-1">
+                  <li>
+                    <strong className="text-slate-100">Free Consumer Account:</strong> OpenSubtitles.com တွင် Account ဖွင့်ပြီး API-Key ထည့်ပါက 100+ downloads/day အခမဲ့ ရရှိပါသည်။
+                  </li>
+                  <li>
+                    <strong className="text-slate-100">Server Caching:</strong> ဒေါင်းလုဒ်ဆွဲထားပြီးသော Subtitle များကို ဒုတိယအကြိမ်မှစ၍ API Quota လုံးဝမသုံးဘဲ Local Server မှ တိုက်ရိုက်ဆွဲယူပါသည်။
+                  </li>
+                  <li>
+                    <strong className="text-slate-100">VIP / Multi-Key:</strong> User များပြားပါက OpenSubtitles VIP သို့မဟုတ် အခြား Provider များကို ချိတ်ဆက် အသုံးပြုနိုင်ပါသည်။
+                  </li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Tab 4: Change Password */}
       {activeTab === 'password' && (
         <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 space-y-4 max-w-md shadow-sm">
@@ -3021,7 +3697,7 @@ AIzaSyDxxx... (Key #3)`}
               <button
                 onClick={() => {
                   navigator.clipboard.writeText(previewFile.content);
-                  alert('စာတန်းထိုး စာသားများ ကူးယူပြီးပါပြီ');
+                  notify.success('စာတန်းထိုး စာသားများ ကူးယူပြီးပါပြီ');
                 }}
                 className="px-3 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs rounded-lg transition flex items-center space-x-1.5"
               >

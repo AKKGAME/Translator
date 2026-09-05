@@ -4,7 +4,7 @@ import {
   Scissors,
   Plus,
   Trash2,
-  Sparkles,
+  Languages,
   GitMerge,
   Copy,
   Clock,
@@ -170,8 +170,8 @@ export const StudioContextMenu: React.FC<StudioContextMenuProps> = ({
               }}
               className="w-full px-3 py-1.5 text-left flex items-center space-x-2.5 hover:bg-rose-500/20 hover:text-rose-300 transition text-rose-300"
             >
-              <Sparkles className="w-3.5 h-3.5 text-rose-400" />
-              <span>AI ဖြင့် ဘာသာပြန်မည်</span>
+              <Languages className="w-3.5 h-3.5 text-rose-400" />
+              <span>ဘာသာပြန်မည်</span>
             </button>
           </>
         )}

@@ -2,17 +2,19 @@ import React, { useState, useRef } from 'react';
 import {
   Upload,
   FileText,
-  Sparkles,
+  Languages,
   Clipboard,
   Check,
   AlertCircle,
   FileCheck,
   PlayCircle,
   Film,
+  Globe,
 } from 'lucide-react';
 
 interface FileUploaderProps {
   onFileLoaded: (content: string, filename: string) => void;
+  onOpenOnlineSubtitles?: () => void;
 }
 
 const SAMPLE_ANIME_SRT = `1
@@ -49,6 +51,7 @@ Until we meet again, my cherished friends.`;
 
 export const FileUploader: React.FC<FileUploaderProps> = ({
   onFileLoaded,
+  onOpenOnlineSubtitles,
 }) => {
   const [activeTab, setActiveTab] = useState<'upload' | 'paste'>('upload');
   const [pastedText, setPastedText] = useState('');
@@ -108,8 +111,8 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
     <div className="max-w-3xl mx-auto py-6 sm:py-10 px-3 sm:px-6">
       <div className="text-center mb-6 sm:mb-8">
         <div className="inline-flex items-center space-x-1.5 bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-md text-xs font-semibold border border-emerald-500/20 mb-3">
-          <Sparkles className="w-3.5 h-3.5" />
-          <span>Gemini AI Subtitle Translator for Myanmar (Burmese)</span>
+          <Languages className="w-3.5 h-3.5" />
+          <span>Professional Subtitle Translator for Myanmar (Burmese)</span>
         </div>
         <h2 className="text-xl sm:text-2xl md:text-3xl font-bold text-slate-100 tracking-tight font-serif">
           SRT / VTT ဗီဒီယိုစာတန်းထိုး ဖိုင်များ ထည့်သွင်းပါ
@@ -144,6 +147,15 @@ export const FileUploader: React.FC<FileUploaderProps> = ({
             <Clipboard className="w-3.5 h-3.5" />
             <span>စာသား ကူးထည့်မည် (Paste)</span>
           </button>
+          {onOpenOnlineSubtitles && (
+            <button
+              onClick={onOpenOnlineSubtitles}
+              className="flex items-center space-x-1.5 px-3 sm:px-4 py-2 rounded text-xs font-semibold bg-emerald-500/10 hover:bg-emerald-500/20 text-emerald-400 border border-emerald-500/30 transition-colors"
+            >
+              <Globe className="w-3.5 h-3.5" />
+              <span>အွန်လိုင်းမှ ရှာမည် (Search Online)</span>
+            </button>
+          )}
         </div>
       </div>
 

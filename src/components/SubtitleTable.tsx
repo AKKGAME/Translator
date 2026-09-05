@@ -3,7 +3,7 @@ import { SubtitleItem } from '../types';
 import { BURMESE_PUNCTUATION_HELPERS, cleanSoundEffects, stripSpeakerLabels } from '../utils/burmeseUtils';
 import {
   Search,
-  Sparkles,
+  Languages,
   RefreshCw,
   Edit2,
   Check,
@@ -280,7 +280,7 @@ export const SubtitleTable: React.FC<SubtitleTableProps> = ({
                     onClick={() => onTranslateAll(true)}
                     className="flex-1 sm:flex-initial flex items-center justify-center space-x-1 px-2.5 sm:px-3 py-1.5 bg-amber-500/15 hover:bg-amber-500/25 text-amber-300 border border-amber-500/30 font-semibold text-xs rounded-md transition-colors"
                   >
-                    <Sparkles className="w-3.5 h-3.5" />
+                    <Languages className="w-3.5 h-3.5" />
                     <span>ကျန်သည်များ ({items.length - completedCount})</span>
                   </button>
                 )}
@@ -289,8 +289,8 @@ export const SubtitleTable: React.FC<SubtitleTableProps> = ({
                   onClick={() => onTranslateAll(false)}
                   className="flex-1 sm:flex-initial flex items-center justify-center space-x-1.5 px-3 sm:px-4 py-1.5 bg-emerald-600 hover:bg-emerald-500 text-white font-bold text-xs rounded-md transition-colors shadow-xs"
                 >
-                  <Sparkles className="w-3.5 h-3.5" />
-                  <span>{completedCount > 0 ? 'အားလုံး ပြန်လည်ဘာသာပြန်မည်' : 'AI ဘာသာပြန် စတင်မည်'}</span>
+                  <Languages className="w-3.5 h-3.5" />
+                  <span>{completedCount > 0 ? 'အားလုံး ပြန်လည်ဘာသာပြန်မည်' : 'ဘာသာပြန် စတင်မည်'}</span>
                 </button>
               </>
             )}

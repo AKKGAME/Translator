@@ -30,6 +30,15 @@ export const db = firebaseConfig.firestoreDatabaseId
 export const googleProvider = new GoogleAuthProvider();
 googleProvider.setCustomParameters({ prompt: 'select_account' });
 
+export interface UserCustomKeyItem {
+  id: string;
+  label?: string;
+  key: string;
+  projectName?: string;
+  addedAt: string;
+  createdAt?: string;
+}
+
 export interface AppUserProfile {
   uid: string;
   email: string | null;
@@ -41,8 +50,89 @@ export interface AppUserProfile {
   totalTranslatedLines: number;
   isVip: boolean;
   vipExpiresAt?: string | null;
+  planName?: string;
+  planExpiresAt?: string | null;
+  customGeminiKeys?: UserCustomKeyItem[];
+  savedApiKey?: string;
   createdAt?: any;
   lastLoginAt?: any;
+}
+
+export interface UserPlanStatus {
+  hasActivePlan: boolean;
+  daysRemaining: number;
+  isExpired: boolean;
+  planName: string;
+  expiresAtFormatted: string;
+}
+
+/**
+ * Checks if user has an active paid plan with remaining days
+ */
+export function checkUserPlanStatus(profile: AppUserProfile | null): UserPlanStatus {
+  if (!profile) {
+    return {
+      hasActivePlan: false,
+      daysRemaining: 0,
+      isExpired: false,
+      planName: 'No Plan',
+      expiresAtFormatted: 'ဝယ်ယူထားခြင်း မရှိသေးပါ',
+    };
+  }
+
+  // Admin always has unlimited active plan
+  if (profile.role === 'admin' || profile.email === 'aungkyawkhant.apple@gmail.com') {
+    return {
+      hasActivePlan: true,
+      daysRemaining: 9999,
+      isExpired: false,
+      planName: 'Admin Lifetime Plan',
+      expiresAtFormatted: 'Lifetime Access (Admin)',
+    };
+  }
+
+  const expiryStr = profile.planExpiresAt || profile.vipExpiresAt;
+  if (!expiryStr) {
+    if (profile.tier === 'pro' || profile.tier === 'unlimited' || profile.isVip) {
+      return {
+        hasActivePlan: true,
+        daysRemaining: 30,
+        isExpired: false,
+        planName: profile.planName || 'VIP Active Plan',
+        expiresAtFormatted: 'Active',
+      };
+    }
+    return {
+      hasActivePlan: false,
+      daysRemaining: 0,
+      isExpired: false,
+      planName: 'Free Trial (Plan မရှိပါ)',
+      expiresAtFormatted: 'ဝယ်ယူထားခြင်း မရှိသေးပါ',
+    };
+  }
+
+  const expiryMs = new Date(expiryStr).getTime();
+  const nowMs = Date.now();
+  const diffMs = expiryMs - nowMs;
+
+  if (diffMs > 0) {
+    const days = Math.ceil(diffMs / (1000 * 60 * 60 * 24));
+    return {
+      hasActivePlan: true,
+      daysRemaining: days,
+      isExpired: false,
+      planName: profile.planName || (profile.isVip ? 'VIP Studio' : 'Pro Plan'),
+      expiresAtFormatted: new Date(expiryStr).toLocaleDateString('en-GB'),
+    };
+  } else {
+    return {
+      hasActivePlan: false,
+      daysRemaining: 0,
+      isExpired: true,
+      planName: profile.planName ? `${profile.planName} (သက်တမ်းကုန်)` : 'Plan သက်တမ်းကုန်ဆုံး',
+      expiresAtFormatted: `Expired on ${new Date(expiryStr).toLocaleDateString('en-GB')}`,
+    };
+  }
 }
 
 const INITIAL_FREE_CREDITS = 300; // Free welcome credits for every new user
@@ -113,6 +203,42 @@ export async function addCreditsToUser(uid: string, credits: number, isVipUpgrad
     updates.tier = 'pro';
   }
   await updateDoc(userRef, updates);
+}
+
+/**
+ * Save user custom Gemini keys from different Google Cloud projects
+ */
+export async function saveUserCustomKeys(
+  uid: string,
+  keys: UserCustomKeyItem[]
+): Promise<void> {
+  const userRef = doc(db, 'users', uid);
+  const primaryKey = keys.length > 0 ? keys[0].key : '';
+  await updateDoc(userRef, {
+    customGeminiKeys: keys,
+    savedApiKey: primaryKey,
+  });
+}
+
+/**
+ * Update user plan and set remaining expiration date
+ */
+export async function updateUserPlan(
+  uid: string,
+  planName: string,
+  durationDays: number,
+  tier: 'pro' | 'unlimited' = 'pro'
+): Promise<void> {
+  const userRef = doc(db, 'users', uid);
+  const expiryDate = new Date();
+  expiryDate.setDate(expiryDate.getDate() + durationDays);
+
+  await updateDoc(userRef, {
+    planName,
+    planExpiresAt: expiryDate.toISOString(),
+    isVip: true,
+    tier,
+  });
 }
 
 export { fbSignOut, signInWithPopup, onAuthStateChanged, onSnapshot, doc };

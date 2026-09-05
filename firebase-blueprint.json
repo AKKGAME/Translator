@@ -15,6 +15,22 @@
         "totalTranslatedLines": { "type": "number", "description": "Cumulative lines translated by user" },
         "isVip": { "type": "boolean" },
         "vipExpiresAt": { "type": "string", "format": "date-time" },
+        "planName": { "type": "string", "description": "Name of purchased subscription plan" },
+        "planExpiresAt": { "type": "string", "format": "date-time", "description": "ISO timestamp when the active plan expires" },
+        "customGeminiKeys": {
+          "type": "array",
+          "description": "User saved custom Gemini API keys from different Google Cloud projects",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "label": { "type": "string" },
+              "key": { "type": "string" },
+              "projectName": { "type": "string" },
+              "addedAt": { "type": "string", "format": "date-time" }
+            }
+          }
+        },
         "createdAt": { "type": "string", "format": "date-time" },
         "lastLoginAt": { "type": "string", "format": "date-time" }
       },

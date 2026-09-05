@@ -19,6 +19,8 @@ import { ExportModal } from './components/ExportModal';
 import { DonationModal } from './components/DonationModal';
 import { AdminPanel } from './components/AdminPanel';
 import { UserProfileModal } from './components/UserProfileModal';
+import { SubtitleSearchModal } from './components/SubtitleSearchModal';
+import { notify, showAlert } from './components/AlertToastProvider';
 import {
   auth,
   googleProvider,
@@ -28,6 +30,7 @@ import {
   AppUserProfile,
   deductUserCredits,
   db,
+  checkUserPlanStatus,
 } from './lib/firebase';
 import { doc, onSnapshot } from 'firebase/firestore';
 import { translateDirectlyViaGemini, analyzeStoryContextDirectlyViaGemini } from './utils/geminiDirect';
@@ -94,6 +97,7 @@ export default function App() {
   const [isExportOpen, setIsExportOpen] = useState(false);
   const [isShiftOpen, setIsShiftOpen] = useState(false);
   const [isUserProfileOpen, setIsUserProfileOpen] = useState(false);
+  const [isOnlineSubtitlesOpen, setIsOnlineSubtitlesOpen] = useState(false);
 
   // Firebase User & Profile
   const [firebaseUser, setFirebaseUser] = useState<any>(null);
@@ -141,9 +145,25 @@ export default function App() {
       }
     } catch (err: any) {
       console.error('Google sign in error:', err);
-      alert('Google Sign In မအောင်မြင်ပါ: ' + (err.message || 'Error occurred'));
+      notify.error(err.message || 'Error occurred', 'Google Sign In မအောင်မြင်ပါ');
     }
   };
+
+  // Sync custom keys from Firestore userProfile into translationSettings
+  useEffect(() => {
+    if (userProfile?.customGeminiKeys && userProfile.customGeminiKeys.length > 0) {
+      setTranslationSettings((prev) => ({
+        ...prev,
+        customApiKeys: userProfile.customGeminiKeys,
+        customApiKey: prev.customApiKey || userProfile.customGeminiKeys![0].key,
+      }));
+    } else if (userProfile?.savedApiKey) {
+      setTranslationSettings((prev) => ({
+        ...prev,
+        customApiKey: prev.customApiKey || userProfile.savedApiKey,
+      }));
+    }
+  }, [userProfile]);
 
   // Translation State & Progress
   const [isTranslating, setIsTranslating] = useState(false);
@@ -242,6 +262,23 @@ export default function App() {
     animId = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(animId);
   }, [isPlaying, durationSec]);
+
+  // Discreet Admin Panel Shortcut (Ctrl+Shift+A or Cmd+Shift+A) and URL trigger
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'A' || e.key === 'a')) {
+        e.preventDefault();
+        setActiveTab((prev) => (prev === 'admin' ? 'studio' : 'admin'));
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+
+    if (window.location.hash === '#admin' || window.location.search.includes('admin=true')) {
+      setActiveTab('admin');
+    }
+
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, []);
 
   // Subtitle Item Operations
   const handleUpdateItem = useCallback((id: number, updatedFields: Partial<SubtitleItem>) => {
@@ -394,12 +431,34 @@ export default function App() {
 
   // Single Line AI Translation
   const handleTranslateSingleItem = useCallback(async (item: SubtitleItem) => {
-    // Credit & Auth Check if not using personal custom API key
-    const isUsingCustomKey = !!translationSettings.customApiKey?.trim();
+    // Credit & Auth Check with Active Plan requirement for custom keys (BYOK)
+    const isUsingCustomKey =
+      !!translationSettings.customApiKey?.trim() ||
+      !!(translationSettings.customApiKeys && translationSettings.customApiKeys.length > 0);
+    const planStatus = userProfile
+      ? checkUserPlanStatus(userProfile)
+      : { hasActivePlan: false, daysRemaining: 0, planName: 'None' };
+    const isAdmin = userProfile?.role === 'admin';
+
+    // Restrict custom keys to users with active plan and remaining days (or Admin)
+    if (isUsingCustomKey && !isAdmin && !planStatus.hasActivePlan) {
+      setIsUserProfileOpen(true);
+      showAlert({
+        title: 'Plan ဝယ်ယူရန် လိုအပ်ပါသည်',
+        message: 'Plan ဝယ်ယူထားပြီး သက်တမ်းရက် ကျန်ရှိမှသာ မိမိ၏ Free Gemini API Key (BYOK) ထည့်သွင်းသုံးစွဲနိုင်ပါသည်!\n\nကျေးဇူးပြု၍ Plan ဝယ်ယူပါ သို့မဟုတ် စနစ်မှ ပေးထားသော Free Credits (300 lines) ဖြင့် အသုံးပြုပါ',
+        type: 'warning',
+      });
+      return;
+    }
+
     if (!isUsingCustomKey) {
       if (!firebaseUser) {
         setIsUserProfileOpen(true);
-        alert('ဘာသာပြန်ရန်အတွက် Google Account ဖြင့် Sign In ဝင်ရောက်ပေးပါ (300 Free Credits ရရှိပါမည်) သို့မဟုတ် Settings တွင် ကိုယ်ပိုင် Gemini API Key ထည့်သွင်းနိုင်ပါသည်');
+        showAlert({
+          title: 'Sign In ပြုလုပ်ပေးပါ',
+          message: 'ဘာသာပြန်ရန်အတွက် Google Account ဖြင့် Sign In ဝင်ရောက်ပေးပါ (300 Free Credits ရရှိပါမည်) သို့မဟုတ် Plan ဝယ်ယူ၍ ကိုယ်ပိုင် Gemini API Key ထည့်သွင်းနိုင်ပါသည်',
+          type: 'info',
+        });
         return;
       }
       const isVipOrAdmin =
@@ -408,7 +467,11 @@ export default function App() {
         userProfile?.tier === 'unlimited';
       if (!isVipOrAdmin && (userProfile?.credits ?? 0) <= 0) {
         setIsUserProfileOpen(true);
-        alert('Translation Credits ကုန်ဆုံးသွားပါပြီ။ Promo Code ရိုက်ထည့်ပါ သို့မဟုတ် Credit ထပ်မံဖြည့်တင်းပါ');
+        showAlert({
+          title: 'Translation Credits ကုန်ဆုံးသွားပါပြီ',
+          message: 'Promo Code ရိုက်ထည့်ပါ သို့မဟုတ် Credit / Plan ထပ်မံဖြည့်တင်းပေးပါ',
+          type: 'warning',
+        });
         return;
       }
     }
@@ -420,6 +483,7 @@ export default function App() {
       const payload = {
         items: [{ id: item.id, text: item.originalText }],
         apiKey: translationSettings.customApiKey,
+        customApiKeys: translationSettings.customApiKeys,
         accessCode: translationSettings.accessCode,
         settings: {
           style: translationSettings.style,
@@ -802,12 +866,34 @@ export default function App() {
   const handleStartTranslate = async () => {
     if (items.length === 0 || isTranslating) return;
 
-    // Credit & Auth Check (if not using personal custom Gemini API key)
-    const isUsingCustomKey = !!translationSettings.customApiKey?.trim();
+    // Credit & Auth Check with Active Plan requirement for custom keys (BYOK)
+    const isUsingCustomKey =
+      !!translationSettings.customApiKey?.trim() ||
+      !!(translationSettings.customApiKeys && translationSettings.customApiKeys.length > 0);
+    const planStatus = userProfile
+      ? checkUserPlanStatus(userProfile)
+      : { hasActivePlan: false, daysRemaining: 0, planName: 'None' };
+    const isAdmin = userProfile?.role === 'admin';
+
+    // Restrict custom keys to users with active plan and remaining days (or Admin)
+    if (isUsingCustomKey && !isAdmin && !planStatus.hasActivePlan) {
+      setIsUserProfileOpen(true);
+      showAlert({
+        title: 'Plan ဝယ်ယူရန် လိုအပ်ပါသည်',
+        message: 'Plan ဝယ်ယူထားပြီး သက်တမ်းရက် ကျန်ရှိမှသာ မိမိ၏ Free Gemini API Key (BYOK) ထည့်သွင်းသုံးစွဲနိုင်ပါသည်!\n\nကျေးဇူးပြု၍ Plan ဝယ်ယူပါ သို့မဟုတ် စနစ်မှ ပေးထားသော Free Credits (300 lines) ဖြင့် အသုံးပြုပါ',
+        type: 'warning',
+      });
+      return;
+    }
+
     if (!isUsingCustomKey) {
       if (!firebaseUser) {
         setIsUserProfileOpen(true);
-        alert('ဘာသာပြန်ရန်အတွက် Google Account ဖြင့် Sign In ဝင်ရောက်ပေးပါ (အခမဲ့ 300 Free Credits ရရှိပါမည်) သို့မဟုတ် Settings တွင် ကိုယ်ပိုင် Gemini API Key ထည့်သွင်းနိုင်ပါသည်');
+        showAlert({
+          title: 'Sign In ပြုလုပ်ပေးပါ',
+          message: 'ဘာသာပြန်ရန်အတွက် Google Account ဖြင့် Sign In ဝင်ရောက်ပေးပါ (အခမဲ့ 300 Free Credits ရရှိပါမည်) သို့မဟုတ် Plan ဝယ်ယူ၍ ကိုယ်ပိုင် Gemini API Key ထည့်သွင်းနိုင်ပါသည်',
+          type: 'info',
+        });
         return;
       }
 
@@ -818,7 +904,11 @@ export default function App() {
 
       if (!isVipOrAdmin && (userProfile?.credits ?? 0) <= 0) {
         setIsUserProfileOpen(true);
-        alert('သင်၏ Translation Credit များ ကုန်ဆုံးသွားပါပြီ။ Promo Code ရိုက်ထည့်ပါ သို့မဟုတ် Credit ထပ်မံဖြည့်တင်းပါ');
+        showAlert({
+          title: 'Translation Credits ကုန်ဆုံးသွားပါပြီ',
+          message: 'သင်၏ Translation Credit များ ကုန်ဆုံးသွားပါပြီ။ Promo Code ရိုက်ထည့်ပါ သို့မဟုတ် Plan / Credits ထပ်မံဖြည့်တင်းပါ',
+          type: 'warning',
+        });
         return;
       }
     }
@@ -864,6 +954,7 @@ export default function App() {
         const payload = {
           items: chunk.map((item) => ({ id: item.id, text: item.originalText })),
           apiKey: translationSettings.customApiKey,
+          customApiKeys: translationSettings.customApiKeys,
           settings: {
             style: translationSettings.style,
             tone: translationSettings.tone,
@@ -995,6 +1086,7 @@ export default function App() {
         onOpenSettings={() => setIsSettingsModalOpen(true)}
         onOpenAdmin={() => setActiveTab(activeTab === 'admin' ? 'studio' : 'admin')}
         onOpenDonate={() => setIsDonationModalOpen(true)}
+        onOpenOnlineSubtitles={() => setIsOnlineSubtitlesOpen(true)}
         hasSubtitles={items.length > 0}
         user={firebaseUser}
         profile={userProfile}
@@ -1051,6 +1143,7 @@ export default function App() {
               };
               reader.readAsText(file);
             }}
+            onOpenOnlineSubtitles={() => setIsOnlineSubtitlesOpen(true)}
             onClearTranslations={handleClearTranslations}
             onClearAllItems={handleClearAllItems}
             onReindexItems={handleReindexItems}
@@ -1130,7 +1223,29 @@ export default function App() {
       <UserProfileModal
         isOpen={isUserProfileOpen}
         onClose={() => setIsUserProfileOpen(false)}
-        onProfileUpdated={(updated) => setUserProfile(updated)}
+        user={firebaseUser}
+        profile={userProfile}
+        onSignIn={handleGoogleSignIn}
+        onOpenAdmin={() => setActiveTab(activeTab === 'admin' ? 'studio' : 'admin')}
+        onUpdateCustomKeys={(updatedKeys) => {
+          setTranslationSettings((prev) => ({
+            ...prev,
+            customApiKeys: updatedKeys,
+            customApiKey: updatedKeys.length > 0 ? updatedKeys[0].key : prev.customApiKey,
+          }));
+        }}
+      />
+
+      {/* Online Subtitle Search & Direct Import Modal */}
+      <SubtitleSearchModal
+        isOpen={isOnlineSubtitlesOpen}
+        onClose={() => setIsOnlineSubtitlesOpen(false)}
+        onImportSubtitle={handleFileLoaded}
+        isAdmin={userProfile?.role === 'admin'}
+        onOpenAdmin={() => {
+          setIsOnlineSubtitlesOpen(false);
+          setActiveTab('admin');
+        }}
       />
     </div>
   );

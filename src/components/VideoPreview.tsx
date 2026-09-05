@@ -20,13 +20,11 @@ import {
   Search,
   Gauge,
   Keyboard,
-  Wand2,
   Check,
   RotateCcw,
   Sliders,
   ChevronDown,
   ChevronUp,
-  Sparkles,
   Zap,
   Plus,
   Trash2,
@@ -749,7 +747,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                     className="flex items-center space-x-1 px-2.5 py-1 bg-[#12161f] hover:bg-[#1a202c] text-rose-300 text-[10px] rounded border border-[#262f40] transition whitespace-nowrap"
                     title="ဟောဟဲ/အသံဆူညံသံများ ဖျက်မည်"
                   >
-                    <Wand2 className="w-3 h-3 text-rose-400" />
+                    <VolumeX className="w-3 h-3 text-rose-400" />
                     <span>အသံသံဖျက်</span>
                   </button>
                 </div>
@@ -1047,7 +1045,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
             )}
 
             <div className="text-[10px] text-slate-400 flex items-center space-x-1.5 bg-[#07090e]/60 px-2.5 py-1.5 rounded border border-[#212734]">
-              <Sparkles className="w-3 h-3 text-emerald-400 flex-shrink-0" />
+              <Film className="w-3 h-3 text-emerald-400 flex-shrink-0" />
               <span>MKV, MP4, WebM, MOV ဗီဒီယိုဖိုင်များ တိုက်ရိုက် ကြည့်ရှု အသုံးပြုနိုင်ပါသည်</span>
             </div>
           </div>

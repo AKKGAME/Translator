@@ -134,6 +134,7 @@ export interface TranslationSettings {
   enableContextPreAnalysis: boolean; // Pre-read whole context before translating to avoid mistakes
   storyContext?: StoryContextAnalysis | null;
   customApiKey?: string;
+  customApiKeys?: Array<{ id: string; key: string; label?: string; projectName?: string }>;
   accessCode?: string; // VIP Access Code
   donationConfig?: DonationConfig;
   telegramConfig?: TelegramConfig;

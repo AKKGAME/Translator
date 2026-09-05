@@ -6,10 +6,10 @@ import {
   Copy,
   Check,
   QrCode,
-  Sparkles,
   Smartphone,
   CreditCard,
   Coffee,
+  Send,
 } from 'lucide-react';
 
 interface DonationModalProps {
@@ -188,6 +188,19 @@ export const DonationModal: React.FC<DonationModalProps> = ({
             <p className="text-[11px] text-slate-400 leading-snug">
               အသေးစား ကူညီမှုလေးဖြစ်စေ စေတနာထက်သန်စွာ ကူညီပေးခြင်းသည် Server နှင့် AI API သုံးစွဲခများအတွက် များစွာ အထောက်အကူပြုပါသည်!
             </p>
+          </div>
+
+          <div className="p-2.5 bg-purple-950/30 border border-purple-800/30 rounded-md flex items-center justify-between gap-2 text-[11px] text-purple-200">
+            <span>Admin နှင့် တိုက်ရိုက် စကားပြောရန်:</span>
+            <a
+              href="https://t.me/akk_shadow"
+              target="_blank"
+              rel="noreferrer"
+              className="px-2.5 py-1 bg-purple-600 hover:bg-purple-500 text-white rounded text-[11px] font-bold flex items-center space-x-1 transition cursor-pointer shrink-0"
+            >
+              <Send className="w-3 h-3" />
+              <span>Telegram: @akk_shadow</span>
+            </a>
           </div>
         </div>
 

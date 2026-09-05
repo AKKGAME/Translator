@@ -19,7 +19,7 @@ import {
   Type,
   Wrench,
   Sliders,
-  Sparkles,
+  Languages,
   ChevronDown,
   Upload,
   Clock,
@@ -35,14 +35,16 @@ import {
   Gauge,
   Film,
   Check,
-  Brain,
+  Compass,
   BookOpen,
   RefreshCw,
   X,
   CheckCircle2,
+  Globe,
 } from 'lucide-react';
 import { AnimeSceneCanvas } from './AnimeSceneCanvas';
 import { msToTimeSRT } from '../utils/subtitleParser';
+import { showConfirm, notify } from './AlertToastProvider';
 import { StudioContextMenu, ContextMenuState } from './StudioContextMenu';
 
 interface StudioWorkspaceProps {
@@ -70,6 +72,7 @@ interface StudioWorkspaceProps {
   customVideoUrl: string | null;
   customVideoFileName: string | null;
   onUploadSubtitle?: (file: File) => void;
+  onOpenOnlineSubtitles?: () => void;
   onClearTranslations?: () => void;
   onClearAllItems?: () => void;
   onReindexItems?: () => void;
@@ -106,6 +109,7 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
   customVideoUrl,
   customVideoFileName,
   onUploadSubtitle,
+  onOpenOnlineSubtitles,
   onClearTranslations,
   onClearAllItems,
   onReindexItems,
@@ -732,6 +736,17 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
                     />
                   </label>
 
+                  {onOpenOnlineSubtitles && (
+                    <button
+                      onClick={onOpenOnlineSubtitles}
+                      className="p-2 bg-[#181926] hover:bg-[#202235] border border-emerald-500/30 rounded text-left flex items-center space-x-2 text-emerald-300 hover:text-emerald-200 transition"
+                      title="အွန်လိုင်းမှ စာတန်းထိုး ရှာဖွေတင်သွင်းရန်"
+                    >
+                      <Globe className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                      <span className="truncate">အွန်လိုင်းမှ ရှာမည်</span>
+                    </button>
+                  )}
+
                   <button
                     onClick={onReindexItems}
                     className="p-2 bg-[#181926] hover:bg-[#202235] border border-[#25283c] rounded text-left flex items-center space-x-2 text-slate-200 transition"
@@ -751,9 +766,16 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
                   </button>
 
                   <button
-                    onClick={() => {
-                      if (window.confirm('ဘာသာပြန်ဆိုထားသော စာကြောင်းများအားလုံးကို ရှင်းလင်းရန် သေချာပါသလား?')) {
+                    onClick={async () => {
+                      const confirmed = await showConfirm({
+                        title: 'ဘာသာပြန်များ ရှင်းလင်းရန်',
+                        message: 'ဘာသာပြန်ဆိုထားသော စာကြောင်းများအားလုံးကို ရှင်းလင်းရန် သေချာပါသလား?',
+                        confirmText: 'ရှင်းလင်းမည်',
+                        type: 'warning',
+                      });
+                      if (confirmed) {
                         onClearTranslations?.();
+                        notify.info('ဘာသာပြန်ဆိုထားသော စာကြောင်းများကို ရှင်းလင်းပြီးပါပြီ');
                       }
                     }}
                     className="p-2 bg-[#181926] hover:bg-[#202235] border border-[#25283c] rounded text-left flex items-center space-x-2 text-slate-200 transition hover:text-amber-300"
@@ -764,9 +786,16 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
                   </button>
 
                   <button
-                    onClick={() => {
-                      if (window.confirm('စာတန်းထိုးအားလုံးကို ဖျက်ပစ်ပြီး အသစ်စတင်ရန် သေချာပါသလား?')) {
+                    onClick={async () => {
+                      const confirmed = await showConfirm({
+                        title: 'စာတန်းအားလုံး ဖျက်မည်',
+                        message: 'စာတန်းထိုးအားလုံးကို ဖျက်ပစ်ပြီး အသစ်စတင်ရန် သေချာပါသလား?',
+                        confirmText: 'အကုန်ဖျက်မည်',
+                        type: 'danger',
+                      });
+                      if (confirmed) {
                         onClearAllItems?.();
+                        notify.info('စာတန်းထိုးအားလုံးကို ရှင်းလင်းပြီးပါပြီ');
                       }
                     }}
                     className="p-2 bg-[#181926] hover:bg-[#202235] border border-[#25283c] rounded text-left flex items-center space-x-2 text-slate-200 transition hover:text-rose-300"
@@ -875,7 +904,7 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
               }`}
               title="ဇာတ်လမ်း & ဇာတ်ကောင် သုံးသပ်ချက် (Story Context)"
             >
-              <Brain className={`w-3.5 h-3.5 ${isAnalyzingContext || contextAnalysisStep === 'reading' ? 'animate-spin text-amber-300' : 'text-purple-400'}`} />
+              <Compass className={`w-3.5 h-3.5 ${isAnalyzingContext || contextAnalysisStep === 'reading' ? 'animate-spin text-amber-300' : 'text-purple-400'}`} />
               <span className="hidden sm:inline">Story Context</span>
               {translationSettings.storyContext && (
                 <span className="w-1.5 h-1.5 rounded-full bg-emerald-400"></span>
@@ -983,7 +1012,7 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
         {(isAnalyzingContext || contextAnalysisStep === 'reading') && (
           <div className="bg-purple-950/80 border-b border-purple-500/40 p-2.5 px-4 text-xs flex items-center justify-between text-purple-200 animate-pulse backdrop-blur-xs">
             <div className="flex items-center space-x-2.5">
-              <Brain className="w-4 h-4 text-amber-300 animate-spin" />
+              <Compass className="w-4 h-4 text-amber-300 animate-spin" />
               <div>
                 <span className="font-bold text-amber-300">အဆင့် (၁/၂) - စာသားများကို သေချာဖတ်ရှု လေ့လာနေပါသည်: </span>
                 <span>ဘာသာမပြန်မီ ဇာတ်လမ်းနောက်ခံ၊ ဇာတ်ကောင် ဆက်ဆံရေးနှင့် Pronoun များကို အရင်နားလည်အောင် ဖတ်ရှုနေပါသည်...</span>
@@ -1000,7 +1029,7 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
           <div className="bg-[#0e101c] border-b border-purple-500/30 p-3 text-xs text-slate-200 space-y-2.5 animate-in slide-in-from-top-1 duration-150">
             <div className="flex items-center justify-between pb-1.5 border-b border-[#1f233a]">
               <div className="flex items-center space-x-2">
-                <Brain className="w-4 h-4 text-purple-400" />
+                <Compass className="w-4 h-4 text-purple-400" />
                 <span className="font-bold text-slate-100">
                   ဇာတ်လမ်း & ဇာတ်ကောင် အချက်အလက် (Pre-read Story Knowledge)
                 </span>
@@ -1231,9 +1260,9 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
                   <button
                     onClick={() => onTranslateSingleItem?.(item)}
                     className="p-1 hover:text-rose-300 hover:bg-rose-500/20 rounded transition text-rose-400"
-                    title="AI ဖြင့် ဤတစ်ကြောင်း ဘာသာပြန်မည်"
+                    title="ဤတစ်ကြောင်း ဘာသာပြန်မည်"
                   >
-                    <Sparkles className="w-3 h-3" />
+                    <Languages className="w-3 h-3" />
                   </button>
                 </div>
 

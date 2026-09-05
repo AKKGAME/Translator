@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
-import { db, AppUserProfile } from '../lib/firebase';
+import { db, AppUserProfile, checkUserPlanStatus, updateUserPlan } from '../lib/firebase';
+import { notify, showConfirm, showAlert } from './AlertToastProvider';
 import {
   collection,
   getDocs,
@@ -16,7 +17,9 @@ import {
 import {
   Users,
   Search,
-  Sparkles,
+  Calendar,
+  KeyRound,
+  Layers,
   Crown,
   Gift,
   Plus,
@@ -125,10 +128,44 @@ export const AdminFirebaseUsers: React.FC = () => {
         )
       );
       setAdjustingUser(null);
+      notify.success('ခရက်ဒစ် ပြင်ဆင်မှု အောင်မြင်ပါသည်');
     } catch (err: any) {
-      alert('ခရက်ဒစ် ပြင်ဆင်မှု မအောင်မြင်ပါ: ' + (err.message || 'Error'));
+      notify.error(err.message || 'Error occurred', 'ခရက်ဒစ် ပြင်ဆင်မှု မအောင်မြင်ပါ');
     } finally {
       setIsAdjusting(false);
+    }
+  };
+
+  const handleExtendPlan = async (user: AppUserProfile, days: number, planName: string = 'VIP Pro Plan') => {
+    try {
+      const userRef = doc(db, 'users', user.uid);
+      const currentStatus = checkUserPlanStatus(user);
+      const newExpiry = new Date();
+      if (currentStatus.hasActivePlan && user.planExpiresAt) {
+        const existingExp = new Date(user.planExpiresAt);
+        if (existingExp > newExpiry) {
+          existingExp.setDate(existingExp.getDate() + days);
+          newExpiry.setTime(existingExp.getTime());
+        } else {
+          newExpiry.setDate(newExpiry.getDate() + days);
+        }
+      } else {
+        newExpiry.setDate(newExpiry.getDate() + days);
+      }
+
+      const updates: any = {
+        planName,
+        planExpiresAt: newExpiry.toISOString(),
+        isVip: true,
+        tier: 'pro',
+      };
+      await updateDoc(userRef, updates);
+      setUsers((prev) =>
+        prev.map((u) => (u.uid === user.uid ? { ...u, ...updates } : u))
+      );
+      notify.success(`User (${user.displayName || user.email}) အား Plan သက်တမ်း ${days} ရက် တိုးပေးပြီးပါပြီ`);
+    } catch (err: any) {
+      notify.error(err.message || 'Error occurred', 'Plan သက်တမ်း တိုးပေးရန် မအောင်မြင်ပါ');
     }
   };
 
@@ -151,6 +188,7 @@ export const AdminFirebaseUsers: React.FC = () => {
         createdAt: serverTimestamp(),
       };
       await setDoc(promoRef, promoData);
+      notify.success(`Promo Code "${cleanCode}" အောင်မြင်စွာ ဖန်တီးပြီးပါပြီ!`);
       setPromoMessage({ type: 'success', text: `Promo Code "${cleanCode}" အောင်မြင်စွာ ဖန်တီးပြီးပါပြီ!` });
       setNewPromoCode('');
       fetchPromoCodes();
@@ -162,12 +200,19 @@ export const AdminFirebaseUsers: React.FC = () => {
   };
 
   const handleDeletePromoCode = async (id: string) => {
-    if (!confirm(`Promo Code "${id}" ကို ဖျက်ရန် သေချာပါသလား?`)) return;
+    const confirmed = await showConfirm({
+      title: 'Promo Code ဖျက်ရန်',
+      message: `Promo Code "${id}" ကို ဖျက်ရန် သေချာပါသလား?`,
+      type: 'danger',
+      confirmText: 'ဖျက်မည်',
+    });
+    if (!confirmed) return;
     try {
       await deleteDoc(doc(db, 'promoCodes', id));
       setPromoCodes((prev) => prev.filter((p) => p.id !== id));
+      notify.success(`Promo Code "${id}" ကို ဖျက်ပစ်ပြီးပါပြီ`);
     } catch (err: any) {
-      alert('ဖျက်ရန် မအောင်မြင်ပါ: ' + err.message);
+      notify.error(err.message || 'Error occurred', 'ဖျက်ရန် မအောင်မြင်ပါ');
     }
   };
 
@@ -254,110 +299,147 @@ export const AdminFirebaseUsers: React.FC = () => {
                   <tr>
                     <th className="p-3">User Profile</th>
                     <th className="p-3">Role / Tier</th>
-                    <th className="p-3">Available Credits</th>
-                    <th className="p-3">Total Translated</th>
-                    <th className="p-3 text-right">Quick Credit Adjust</th>
+                    <th className="p-3">Plan Status (Days Left)</th>
+                    <th className="p-3">Custom Keys (BYOK)</th>
+                    <th className="p-3">Credits</th>
+                    <th className="p-3 text-right">Plan & Credit Actions</th>
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-[#1e2238]">
                   {filteredUsers.length === 0 ? (
                     <tr>
-                      <td colSpan={5} className="p-6 text-center text-slate-500">
+                      <td colSpan={6} className="p-6 text-center text-slate-500">
                         {isLoadingUsers ? 'User စာရင်း ရယူနေပါသည်...' : 'User မတွေ့ရှိပါ'}
                       </td>
                     </tr>
                   ) : (
-                    filteredUsers.map((u) => (
-                      <tr key={u.uid} className="hover:bg-[#131627] transition">
-                        <td className="p-3">
-                          <div className="flex items-center space-x-2.5">
-                            {u.photoURL ? (
-                              <img
-                                src={u.photoURL}
-                                alt={u.displayName || 'User'}
-                                referrerPolicy="no-referrer"
-                                className="w-8 h-8 rounded-full border border-purple-500/40 object-cover"
-                              />
-                            ) : (
-                              <div className="w-8 h-8 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center font-bold text-xs border border-purple-500/30">
-                                {u.displayName?.[0] || u.email?.[0] || 'U'}
+                    filteredUsers.map((u) => {
+                      const planStatus = checkUserPlanStatus(u);
+                      return (
+                        <tr key={u.uid} className="hover:bg-[#131627] transition">
+                          <td className="p-3">
+                            <div className="flex items-center space-x-2.5">
+                              {u.photoURL ? (
+                                <img
+                                  src={u.photoURL}
+                                  alt={u.displayName || 'User'}
+                                  referrerPolicy="no-referrer"
+                                  className="w-8 h-8 rounded-full border border-purple-500/40 object-cover"
+                                />
+                              ) : (
+                                <div className="w-8 h-8 rounded-full bg-purple-600/30 text-purple-300 flex items-center justify-center font-bold text-xs border border-purple-500/30">
+                                  {u.displayName?.[0] || u.email?.[0] || 'U'}
+                                </div>
+                              )}
+                              <div>
+                                <div className="font-bold text-slate-100 flex items-center space-x-1.5">
+                                  <span>{u.displayName || 'No Name'}</span>
+                                  {u.isVip && (
+                                    <span className="bg-amber-500/20 text-amber-300 text-[9px] px-1.5 py-0.2 rounded font-mono font-bold">
+                                      VIP
+                                    </span>
+                                  )}
+                                </div>
+                                <div className="text-[11px] text-slate-400">{u.email}</div>
                               </div>
-                            )}
-                            <div>
-                              <div className="font-bold text-slate-100 flex items-center space-x-1.5">
-                                <span>{u.displayName || 'No Name'}</span>
-                                {u.isVip && (
-                                  <span className="bg-amber-500/20 text-amber-300 text-[9px] px-1.5 py-0.2 rounded font-mono font-bold">
-                                    VIP
-                                  </span>
-                                )}
-                              </div>
-                              <div className="text-[11px] text-slate-400">{u.email}</div>
                             </div>
-                          </div>
-                        </td>
+                          </td>
 
-                        <td className="p-3">
-                          <div className="space-y-0.5">
-                            <span
-                              className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold inline-block ${
-                                u.role === 'admin'
-                                  ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
-                                  : u.isVip
-                                  ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
-                                  : 'bg-purple-950/70 text-purple-300 border border-purple-800'
-                              }`}
-                            >
-                              {u.role.toUpperCase()}
-                            </span>
-                            <div className="text-[10px] text-slate-500 font-mono">Tier: {u.tier}</div>
-                          </div>
-                        </td>
+                          <td className="p-3">
+                            <div className="space-y-0.5">
+                              <span
+                                className={`text-[10px] px-2 py-0.5 rounded font-mono font-bold inline-block ${
+                                  u.role === 'admin'
+                                    ? 'bg-rose-500/20 text-rose-300 border border-rose-500/30'
+                                    : u.isVip
+                                    ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
+                                    : 'bg-purple-950/70 text-purple-300 border border-purple-800'
+                                }`}
+                              >
+                                {u.role.toUpperCase()}
+                              </span>
+                              <div className="text-[10px] text-slate-500 font-mono">Tier: {u.tier}</div>
+                            </div>
+                          </td>
 
-                        <td className="p-3">
-                          <div className="flex items-baseline space-x-1">
-                            <span className="font-mono font-bold text-sm text-amber-300">
-                              {u.role === 'admin' ? '∞' : (u.credits || 0).toLocaleString()}
-                            </span>
-                            <span className="text-[10px] text-slate-400">lines</span>
-                          </div>
-                        </td>
+                          <td className="p-3">
+                            {u.role === 'admin' ? (
+                              <span className="text-emerald-400 text-[11px] font-bold">Admin Lifetime</span>
+                            ) : planStatus.hasActivePlan ? (
+                              <div className="space-y-0.5">
+                                <span className="inline-flex items-center space-x-1 bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 text-[10px] px-2 py-0.5 rounded font-bold">
+                                  <Calendar className="w-3 h-3" />
+                                  <span>{planStatus.daysRemaining} ရက်ကျန်</span>
+                                </span>
+                                <div className="text-[10px] text-slate-400 truncate max-w-[120px]">
+                                  {u.planName || 'Active Plan'}
+                                </div>
+                              </div>
+                            ) : (
+                              <span className="inline-flex items-center space-x-1 bg-slate-800/80 text-slate-400 border border-slate-700 text-[10px] px-1.5 py-0.5 rounded">
+                                {u.planExpiresAt ? 'Plan သက်တမ်းကုန်' : 'Plan မရှိသေးပါ'}
+                              </span>
+                            )}
+                          </td>
 
-                        <td className="p-3 font-mono text-slate-300">
-                          {(u.totalTranslatedLines || 0).toLocaleString()} lines
-                        </td>
+                          <td className="p-3">
+                            <div className="flex items-center space-x-1.5">
+                              <KeyRound className="w-3.5 h-3.5 text-indigo-400" />
+                              <span className="font-mono font-bold text-slate-200">
+                                {u.customGeminiKeys?.length || (u.savedApiKey ? 1 : 0)}
+                              </span>
+                              <span className="text-[10px] text-slate-500">keys</span>
+                            </div>
+                          </td>
 
-                        <td className="p-3 text-right">
-                          <div className="flex items-center justify-end space-x-1.5">
-                            <button
-                              onClick={() => handleAdjustCredits(u, 500)}
-                              className="px-2 py-1 bg-purple-900/50 hover:bg-purple-800 text-purple-200 rounded text-[11px] font-bold transition cursor-pointer"
-                              title="+500 Credits ထည့်မည်"
-                            >
-                              +500
-                            </button>
-                            <button
-                              onClick={() => handleAdjustCredits(u, 1000)}
-                              className="px-2 py-1 bg-purple-900/50 hover:bg-purple-800 text-purple-200 rounded text-[11px] font-bold transition cursor-pointer"
-                              title="+1,000 Credits ထည့်မည်"
-                            >
-                              +1,000
-                            </button>
-                            <button
-                              onClick={() => handleAdjustCredits(u, 0, !u.isVip)}
-                              className={`px-2 py-1 rounded text-[11px] font-bold transition cursor-pointer ${
-                                u.isVip
-                                  ? 'bg-amber-950/50 hover:bg-amber-900 text-amber-300 border border-amber-700/50'
-                                  : 'bg-indigo-950/50 hover:bg-indigo-900 text-indigo-300 border border-indigo-700/50'
-                              }`}
-                              title={u.isVip ? 'Remove VIP' : 'Grant VIP Status'}
-                            >
-                              {u.isVip ? 'Revoke VIP' : 'Make VIP'}
-                            </button>
-                          </div>
-                        </td>
-                      </tr>
-                    ))
+                          <td className="p-3">
+                            <div className="flex items-baseline space-x-1">
+                              <span className="font-mono font-bold text-sm text-amber-300">
+                                {u.role === 'admin' ? '∞' : (u.credits || 0).toLocaleString()}
+                              </span>
+                              <span className="text-[10px] text-slate-400">lines</span>
+                            </div>
+                          </td>
+
+                          <td className="p-3 text-right">
+                            <div className="flex items-center justify-end flex-wrap gap-1">
+                              <button
+                                onClick={() => handleExtendPlan(u, 30, 'VIP Pro Monthly')}
+                                className="px-1.5 py-1 bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-700/50 text-emerald-300 rounded text-[10px] font-bold transition cursor-pointer"
+                                title="Plan ရက် ၃၀ တိုးပေးမည်"
+                              >
+                                +30d Plan
+                              </button>
+                              <button
+                                onClick={() => handleExtendPlan(u, 60, 'VIP Pro 2 Months')}
+                                className="px-1.5 py-1 bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-700/50 text-emerald-300 rounded text-[10px] font-bold transition cursor-pointer"
+                                title="Plan ရက် ၆၀ တိုးပေးမည်"
+                              >
+                                +60d Plan
+                              </button>
+                              <button
+                                onClick={() => handleAdjustCredits(u, 500)}
+                                className="px-1.5 py-1 bg-purple-900/50 hover:bg-purple-800 text-purple-200 rounded text-[10px] font-bold transition cursor-pointer"
+                                title="+500 Credits ထည့်မည်"
+                              >
+                                +500
+                              </button>
+                              <button
+                                onClick={() => handleAdjustCredits(u, 0, !u.isVip)}
+                                className={`px-1.5 py-1 rounded text-[10px] font-bold transition cursor-pointer ${
+                                  u.isVip
+                                    ? 'bg-amber-950/50 hover:bg-amber-900 text-amber-300 border border-amber-700/50'
+                                    : 'bg-indigo-950/50 hover:bg-indigo-900 text-indigo-300 border border-indigo-700/50'
+                                }`}
+                                title={u.isVip ? 'Remove VIP' : 'Grant VIP Status'}
+                              >
+                                {u.isVip ? 'VIP ဖြုတ်' : 'VIP ပေး'}
+                              </button>
+                            </div>
+                          </td>
+                        </tr>
+                      );
+                    })
                   )}
                 </tbody>
               </table>

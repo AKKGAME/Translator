@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import { TranslationSettings, TranslationStyle, SpeakerNameHandling, ProperNounsMode } from '../types';
 import {
   Settings,
-  Sparkles,
+  Play,
   X,
   Languages,
   Film,
@@ -14,7 +14,7 @@ import {
   Tag,
   Plus,
   Trash2,
-  Brain,
+  Compass,
   CheckCircle2,
   RefreshCw,
   Users,
@@ -93,8 +93,8 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
                 : 'text-slate-400 hover:text-slate-200'
             }`}
           >
-            <Sparkles className="w-4 h-4" />
-            <span>AI ဖြင့် အလိုအလျောက် ဘာသာပြန်မည်</span>
+            <Play className="w-4 h-4 fill-current" />
+            <span>အလိုအလျောက် ဘာသာပြန်မည်</span>
           </button>
 
           <button
@@ -119,7 +119,7 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
                 <div className="flex items-center space-x-2">
                   <div className="p-1.5 bg-purple-500/20 text-purple-300 rounded">
-                    <Brain className="w-4 h-4" />
+                    <Compass className="w-4 h-4" />
                   </div>
                   <div>
                     <span className="text-xs font-bold text-purple-200 block">
@@ -456,8 +456,8 @@ export const TranslationSettingsModal: React.FC<TranslationSettingsModalProps> =
               onClick={handleConfirmAI}
               className="w-full sm:w-auto px-5 py-2 rounded-md bg-emerald-500 hover:bg-emerald-400 text-slate-950 text-xs font-bold transition flex items-center justify-center space-x-2 shadow-sm"
             >
-              <Sparkles className="w-4 h-4" />
-              <span>အတည်ပြုပြီး AI ဘာသာပြန်မည်</span>
+              <Play className="w-4 h-4 fill-current" />
+              <span>အတည်ပြုပြီး ဘာသာပြန်မည်</span>
             </button>
           ) : (
             <button

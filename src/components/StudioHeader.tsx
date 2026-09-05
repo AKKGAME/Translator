@@ -16,9 +16,11 @@ import {
   Play,
   RotateCcw,
   User,
-  Sparkles,
   Crown,
+  Coins,
+  Globe,
 } from 'lucide-react';
+import { checkUserPlanStatus } from '../lib/firebase';
 
 export type DisplayMode = 'bilingual' | 'main' | 'second';
 
@@ -44,6 +46,7 @@ interface StudioHeaderProps {
   onOpenSettings: () => void;
   onOpenAdmin: () => void;
   onOpenDonate: () => void;
+  onOpenOnlineSubtitles?: () => void;
   hasSubtitles: boolean;
   user?: any;
   profile?: any;
@@ -73,6 +76,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
   onOpenSettings,
   onOpenAdmin,
   onOpenDonate,
+  onOpenOnlineSubtitles,
   hasSubtitles,
   user,
   profile,
@@ -81,6 +85,26 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
 }) => {
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const createMenuRef = useRef<HTMLDivElement>(null);
+  const [brandClicks, setBrandClicks] = useState(0);
+  const brandTimeoutRef = useRef<any>(null);
+
+  // Discreet Admin activation via 3 clicks on brand logo
+  const handleBrandClick = () => {
+    setBrandClicks((prev) => {
+      const next = prev + 1;
+      if (next >= 3) {
+        if (brandTimeoutRef.current) clearTimeout(brandTimeoutRef.current);
+        onOpenAdmin();
+        return 0;
+      }
+      return next;
+    });
+
+    if (brandTimeoutRef.current) clearTimeout(brandTimeoutRef.current);
+    brandTimeoutRef.current = setTimeout(() => {
+      setBrandClicks(0);
+    }, 1000);
+  };
 
   // Close create dropdown on outside click
   useEffect(() => {
@@ -107,6 +131,21 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
     <header className="bg-[#12131c] border-b border-[#202234] text-slate-200 h-13 px-3 sm:px-4 flex items-center justify-between select-none z-30 relative shadow-md">
       {/* Left Action Controls */}
       <div className="flex items-center space-x-2 sm:space-x-2.5">
+        {/* Brand Logo (Discreet 3-click trigger to Admin) */}
+        <button
+          type="button"
+          onClick={handleBrandClick}
+          className="flex items-center space-x-2 mr-1 px-2 py-1 rounded-lg hover:bg-[#1a1d2e] transition text-left cursor-pointer group"
+          title="AnimeGabar Subtitle Studio"
+        >
+          <div className="w-6 h-6 rounded-md bg-gradient-to-tr from-purple-700 via-indigo-600 to-violet-500 flex items-center justify-center shadow-xs group-hover:scale-105 transition">
+            <Film className="w-3.5 h-3.5 text-purple-100" />
+          </div>
+          <span className="font-bold text-xs text-slate-100 hidden md:inline tracking-tight">
+            Anime<span className="text-purple-400">Gabar</span>
+          </span>
+        </button>
+
         {/* Create Button with Dropdown */}
         <div className="relative" ref={createMenuRef}>
           <button
@@ -135,6 +174,25 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
                     <div className="text-[10px] text-slate-400">SRT သို့မဟုတ် VTT တင်ရန်</div>
                   </div>
                 </button>
+
+                {onOpenOnlineSubtitles && (
+                  <button
+                    onClick={() => {
+                      setCreateMenuOpen(false);
+                      onOpenOnlineSubtitles();
+                    }}
+                    className="w-full text-left px-3 py-2 text-slate-200 hover:bg-[#25283d] flex items-center space-x-2.5 transition"
+                  >
+                    <Globe className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <div>
+                      <div className="font-semibold flex items-center gap-1.5">
+                        <span>Search Online Subtitles</span>
+                        <span className="text-[9px] bg-emerald-500/20 text-emerald-400 px-1 py-0.2 rounded font-mono font-bold">NEW</span>
+                      </div>
+                      <div className="text-[10px] text-slate-400">အွန်လိုင်းမှ စာတန်းထိုး ရှာဖွေတင်သွင်းရန်</div>
+                    </div>
+                  </button>
+                )}
 
                 <button
                   onClick={() => {
@@ -349,13 +407,16 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
             <Heart className="w-3.5 h-3.5 fill-current" />
           </button>
 
-          <button
-            onClick={onOpenAdmin}
-            className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-[#25283a] rounded transition cursor-pointer"
-            title="AnimeGabar Admin"
-          >
-            <ShieldAlert className="w-3.5 h-3.5" />
-          </button>
+          {/* Admin button is hidden from regular users, only visible when logged in as admin */}
+          {(user?.email === 'aungkyawkhant.apple@gmail.com' || profile?.role === 'admin') && (
+            <button
+              onClick={onOpenAdmin}
+              className="p-1.5 text-slate-500 hover:text-emerald-400 hover:bg-[#25283a] rounded transition cursor-pointer"
+              title="Admin Control (Shortcut: Ctrl+Shift+A)"
+            >
+              <ShieldAlert className="w-3.5 h-3.5 text-emerald-500/80" />
+            </button>
+          )}
         </div>
 
         {/* User Account / Credits Button (Business Model Entry) */}
@@ -394,11 +455,22 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
                     </>
                   ) : (
                     <>
-                      <Sparkles className="w-2.5 h-2.5 text-purple-300 mr-0.5" />
+                      <Coins className="w-2.5 h-2.5 text-purple-300 mr-0.5" />
                       <span>{profile.credits?.toLocaleString() || 0}</span>
                     </>
                   )}
                 </span>
+                {(() => {
+                  const plan = checkUserPlanStatus(profile);
+                  if (plan.hasActivePlan && profile.role !== 'admin') {
+                    return (
+                      <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono font-semibold hidden md:inline">
+                        {plan.daysRemaining}d left
+                      </span>
+                    );
+                  }
+                  return null;
+                })()}
               </div>
             </button>
           ) : (

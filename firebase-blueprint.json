@@ -68,6 +68,41 @@
         "createdAt": { "type": "string", "format": "date-time" }
       },
       "required": ["userId", "linesCount", "action"]
+    },
+    "systemConfig": {
+      "title": "System Configuration & Key Store",
+      "description": "Cloud Firestore persistent storage for admin Gemini Key Pool, VIP Access Keys, Donation accounts, and System Settings",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string", "description": "Document ID (e.g. gemini_key_pool, usage_config, donation_config)" },
+        "geminiKeyPool": {
+          "type": "array",
+          "description": "Admin Gemini API key pool for multi-key load balancing and auto-failover",
+          "items": {
+            "type": "object",
+            "properties": {
+              "id": { "type": "string" },
+              "key": { "type": "string" },
+              "label": { "type": "string" },
+              "status": { "type": "string" },
+              "cooldownUntil": { "type": "number" },
+              "successCount": { "type": "number" },
+              "errorCount": { "type": "number" },
+              "usedLines": { "type": "number" },
+              "todayUsedLines": { "type": "number" },
+              "totalCalls": { "type": "number" },
+              "lastUsedAt": { "type": "string" },
+              "lastErrorMsg": { "type": "string" },
+              "createdAt": { "type": "string" }
+            }
+          }
+        },
+        "strategy": { "type": "string" },
+        "accessKeys": { "type": "array" },
+        "updatedAt": { "type": "string" },
+        "updatedBy": { "type": "string" }
+      },
+      "required": ["id"]
     }
   },
   "firestoreRules": "firestore.rules"

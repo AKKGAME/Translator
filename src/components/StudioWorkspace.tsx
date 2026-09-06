@@ -41,6 +41,8 @@ import {
   ShieldAlert,
   Sparkles,
   Sliders,
+  FastForward,
+  Rewind,
 } from 'lucide-react';
 import { AnimeSceneCanvas } from './AnimeSceneCanvas';
 import { msToTimeSRT } from '../utils/subtitleParser';
@@ -142,6 +144,10 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
   isAnalyzingContext = false,
   contextAnalysisStep = 'idle',
 }) => {
+  const [isControlsVisible, setIsControlsVisible] = useState(true);
+  const [rippleEffect, setRippleEffect] = useState<{ type: 'play' | 'pause' | 'skip-fwd' | 'skip-back'; key: number } | null>(null);
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
   const [isStylePopoverOpen, setIsStylePopoverOpen] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(1);
@@ -238,6 +244,110 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
       document.exitFullscreen();
     } else {
       videoContainerRef.current.requestFullscreen().catch(() => {});
+    }
+  };
+
+  // Auto-hide controls effect when playing
+  useEffect(() => {
+    if (isPlaying) {
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+      controlsTimeoutRef.current = setTimeout(() => {
+        setIsControlsVisible(false);
+      }, 2500);
+    } else {
+      setIsControlsVisible(true);
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    }
+    return () => {
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    };
+  }, [isPlaying]);
+
+  const handlePlayerMouseMove = () => {
+    setIsControlsVisible(true);
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+    if (isPlaying) {
+      controlsTimeoutRef.current = setTimeout(() => {
+        setIsControlsVisible(false);
+      }, 2500);
+    }
+  };
+
+  const handlePlayerMouseLeave = () => {
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+    if (isPlaying) {
+      setIsControlsVisible(false);
+    }
+  };
+
+  const handleVideoClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('input') || target.closest('.group\\/scrub') || target.closest('.control-interactive')) {
+      return;
+    }
+    const nextState = !isPlaying;
+    onTogglePlay();
+    setRippleEffect({
+      type: nextState ? 'play' : 'pause',
+      key: Date.now(),
+    });
+  };
+
+  const handleVideoDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('input') || target.closest('.group\\/scrub') || target.closest('.control-interactive')) {
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const width = rect.width;
+
+    if (clickX < width * 0.35) {
+      const newMs = Math.max(0, currentTimeMs - 5000);
+      onSeek(newMs);
+      setRippleEffect({ type: 'skip-back', key: Date.now() });
+    } else if (clickX > width * 0.65) {
+      const maxMs = (durationSec || 1437) * 1000;
+      const newMs = Math.min(maxMs, currentTimeMs + 5000);
+      onSeek(newMs);
+      setRippleEffect({ type: 'skip-fwd', key: Date.now() });
+    } else {
+      toggleFullscreen();
+    }
+  };
+
+  const jumpToPrevSubtitle = () => {
+    if (!items.length) return;
+    const prev = [...items].reverse().find((it) => it.startMs < currentTimeMs - 400);
+    if (prev) {
+      onSeek(prev.startMs);
+    } else if (items[0]) {
+      onSeek(items[0].startMs);
+    }
+  };
+
+  const jumpToNextSubtitle = () => {
+    if (!items.length) return;
+    const next = items.find((it) => it.startMs > currentTimeMs + 100);
+    if (next) {
+      onSeek(next.startMs);
+    }
+  };
+
+  const handleTogglePiP = async () => {
+    if (!videoElementRef.current) return;
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else if (document.pictureInPictureEnabled) {
+        await videoElementRef.current.requestPictureInPicture();
+      }
+    } catch (err) {
+      console.warn('PiP error:', err);
     }
   };
 
@@ -355,13 +465,20 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
         {/* 16:9 Video Canvas Frame */}
         <div
           ref={videoContainerRef}
-          className="relative w-full aspect-video bg-black flex items-center justify-center overflow-hidden group"
+          onMouseMove={handlePlayerMouseMove}
+          onMouseEnter={handlePlayerMouseMove}
+          onMouseLeave={handlePlayerMouseLeave}
+          onClick={handleVideoClick}
+          onDoubleClick={handleVideoDoubleClick}
+          className={`relative w-full aspect-video bg-black flex items-center justify-center overflow-hidden select-none transition-all ${
+            isPlaying && !isControlsVisible ? 'cursor-none' : 'cursor-default'
+          }`}
         >
           {customVideoUrl ? (
             <video
               ref={videoElementRef}
               src={customVideoUrl}
-              className="w-full h-full object-contain"
+              className="w-full h-full object-contain pointer-events-none"
               playsInline
               onTimeUpdate={() => {
                 if (videoElementRef.current && isPlaying) {
@@ -377,18 +494,89 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
             />
           )}
 
-          {/* Centered Translucent Circular Play/Pause Button */}
-          <button
-            onClick={onTogglePlay}
-            className={`absolute inset-0 flex items-center justify-center cursor-pointer transition ${
-              isPlaying ? 'opacity-0 group-hover:opacity-80' : 'opacity-90'
+          {/* Top Video Header Overlay (Auto-hiding) */}
+          <div
+            className={`absolute top-0 left-0 right-0 p-2.5 bg-gradient-to-b from-black/80 via-black/40 to-transparent flex items-center justify-between text-xs z-30 transition-all duration-300 ${
+              isControlsVisible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none'
             }`}
           >
-            <div className="w-16 h-16 rounded-full bg-white/30 backdrop-blur-md border border-white/40 flex items-center justify-center text-white shadow-2xl transition transform group-hover:scale-110 active:scale-95">
+            <div className="flex items-center space-x-2">
+              <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+              <span className="font-bold text-slate-100 text-[11px] truncate max-w-[180px] sm:max-w-xs drop-shadow">
+                {customVideoFileName || 'Anime Scene Preview (Real-time)'}
+              </span>
+            </div>
+
+            <div className="flex items-center space-x-1.5 text-[10px]">
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  if (onSelectDisplayMode) {
+                    const nextMode =
+                      displayMode === 'bilingual'
+                        ? 'main'
+                        : displayMode === 'main'
+                        ? 'second'
+                        : 'bilingual';
+                    onSelectDisplayMode(nextMode);
+                  }
+                }}
+                className="px-2 py-0.5 rounded bg-black/60 hover:bg-black/90 border border-white/20 text-purple-300 font-semibold transition drop-shadow control-interactive"
+                title="စာတန်းထိုး ပြသမှု မုဒ် ပြောင်းမည်"
+              >
+                CC: {displayMode === 'bilingual' ? 'Dual (နှစ်ဘာသာ)' : displayMode === 'main' ? 'Myanmar Only' : 'English Only'}
+              </button>
+              <span className="px-1.5 py-0.5 rounded bg-black/50 border border-white/10 text-slate-300 font-mono">
+                {items.length} Subs
+              </span>
+            </div>
+          </div>
+
+          {/* Central Ripple Visual Indicator for Play/Pause/Skip */}
+          {rippleEffect && (
+            <div
+              key={rippleEffect.key}
+              className="absolute inset-0 flex items-center justify-center pointer-events-none z-30 animate-out fade-out zoom-out-95 duration-700"
+            >
+              <div className="w-16 h-16 rounded-full bg-black/70 backdrop-blur-md border border-white/30 text-white flex items-center justify-center shadow-2xl">
+                {rippleEffect.type === 'play' && <Play className="w-8 h-8 fill-current ml-1 text-emerald-400" />}
+                {rippleEffect.type === 'pause' && <Pause className="w-8 h-8 fill-current text-amber-400" />}
+                {rippleEffect.type === 'skip-fwd' && (
+                  <div className="flex flex-col items-center">
+                    <FastForward className="w-6 h-6 text-sky-400" />
+                    <span className="text-[10px] font-bold text-sky-300 font-mono">+5s</span>
+                  </div>
+                )}
+                {rippleEffect.type === 'skip-back' && (
+                  <div className="flex flex-col items-center">
+                    <Rewind className="w-6 h-6 text-sky-400" />
+                    <span className="text-[10px] font-bold text-sky-300 font-mono">-5s</span>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
+
+          {/* Centered Translucent Circular Play/Pause Button (When paused or hovering) */}
+          <button
+            onClick={(e) => {
+              e.stopPropagation();
+              onTogglePlay();
+            }}
+            className={`absolute inset-0 flex items-center justify-center cursor-pointer transition-all duration-300 z-20 ${
+              isPlaying
+                ? isControlsVisible
+                  ? 'opacity-0 hover:opacity-80'
+                  : 'opacity-0 pointer-events-none'
+                : 'opacity-90 hover:opacity-100'
+            }`}
+          >
+            <div className="w-14 h-14 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/30 flex items-center justify-center text-white shadow-2xl transition transform hover:scale-110 active:scale-95">
               {isPlaying ? (
-                <Pause className="w-7 h-7 fill-current" />
+                <Pause className="w-6 h-6 fill-current" />
               ) : (
-                <Play className="w-7 h-7 fill-current ml-1" />
+                <Play className="w-6 h-6 fill-current ml-1" />
               )}
             </div>
           </button>
@@ -398,10 +586,12 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
             <div
               className={`absolute left-4 right-4 text-center pointer-events-none transition-all z-20 ${
                 videoConfig.textPosition === 'top'
-                  ? 'top-4'
+                  ? 'top-10'
                   : videoConfig.textPosition === 'middle'
                   ? 'top-1/2 -translate-y-1/2'
-                  : 'bottom-9'
+                  : isControlsVisible
+                  ? 'bottom-14 sm:bottom-16'
+                  : 'bottom-6'
               }`}
             >
               <div
@@ -410,7 +600,7 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
                   color: videoConfig.textColor,
                   fontSize: `${videoConfig.fontSize}px`,
                 }}
-                className="inline-block px-4 py-1.5 rounded max-w-[95%] leading-relaxed font-sans shadow-lg"
+                className="inline-block px-4 py-1.5 rounded max-w-[95%] leading-relaxed font-sans shadow-lg border border-white/10"
               >
                 {/* Mode: Bilingual */}
                 {displayMode === 'bilingual' && (
@@ -446,129 +636,181 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
             </div>
           )}
 
-          {/* Interactive Video Progress Scrubber Bar */}
+          {/* Bottom Floating Controls Container (Auto-Hiding on Hover / Inactivity) */}
           <div
-            onClick={handleScrubberClick}
-            onMouseMove={handleScrubberMouseMove}
-            onMouseLeave={() => setHoverScrubMs(null)}
-            className="absolute bottom-9 left-0 right-0 h-2 hover:h-3 bg-black/50 cursor-pointer z-30 transition-all group/scrub"
+            className={`absolute bottom-0 left-0 right-0 z-30 transition-all duration-300 ${
+              isControlsVisible
+                ? 'opacity-100 translate-y-0'
+                : 'opacity-0 translate-y-2 pointer-events-none'
+            }`}
+            onClick={(e) => e.stopPropagation()}
           >
-            {/* Background track */}
-            <div className="w-full h-full bg-white/20 relative">
-              {/* Active progress */}
-              <div
-                style={{ width: `${progressPct}%` }}
-                className="h-full bg-rose-500 relative"
-              >
-                {/* Knob */}
-                <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3 h-3 bg-white rounded-full shadow-md scale-0 group-hover/scrub:scale-100 transition-transform" />
-              </div>
+            {/* Interactive Video Progress Scrubber Bar */}
+            <div
+              onClick={handleScrubberClick}
+              onMouseMove={handleScrubberMouseMove}
+              onMouseLeave={() => setHoverScrubMs(null)}
+              className="relative h-2 hover:h-3 bg-black/60 cursor-pointer transition-all group/scrub"
+            >
+              {/* Background track */}
+              <div className="w-full h-full bg-white/20 relative">
+                {/* Subtitle segment markers on timeline */}
+                {items.slice(0, 100).map((it) => {
+                  const left = Math.min(100, Math.max(0, (it.startMs / ((durationSec || 1437) * 1000)) * 100));
+                  const width = Math.min(100 - left, Math.max(0.4, ((it.endMs - it.startMs) / ((durationSec || 1437) * 1000)) * 100));
+                  const isCurrent = activeItem?.id === it.id;
+                  return (
+                    <div
+                      key={it.id}
+                      style={{ left: `${left}%`, width: `${width}%` }}
+                      className={`absolute top-0 bottom-0 pointer-events-none ${
+                        isCurrent
+                          ? 'bg-amber-400/90 z-10'
+                          : it.translatedText
+                          ? 'bg-emerald-400/50'
+                          : 'bg-white/30'
+                      }`}
+                    />
+                  );
+                })}
 
-              {/* Hover Tooltip */}
-              {hoverScrubMs !== null && (
+                {/* Active progress */}
                 <div
-                  style={{
-                    left: `${(hoverScrubMs / ((durationSec || 1437) * 1000)) * 100}%`,
-                  }}
-                  className="absolute bottom-3 -translate-x-1/2 bg-black/90 text-white font-mono text-[10px] px-1.5 py-0.5 rounded shadow pointer-events-none"
+                  style={{ width: `${progressPct}%` }}
+                  className="h-full bg-purple-500 relative z-10"
                 >
-                  {formatTime(hoverScrubMs / 1000)}
+                  {/* Knob */}
+                  <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white rounded-full shadow-md scale-0 group-hover/scrub:scale-100 transition-transform" />
                 </div>
-              )}
-            </div>
-          </div>
 
-          {/* Video Control Bar Overlay at Bottom */}
-          <div className="absolute bottom-0 left-0 right-0 h-9 bg-gradient-to-t from-black/90 via-black/60 to-transparent px-3 flex items-center justify-between text-white text-xs opacity-90 hover:opacity-100 transition z-20">
-            {/* Play/Pause & Volume & Time */}
-            <div className="flex items-center space-x-2.5">
-              <button
-                onClick={onTogglePlay}
-                className="hover:text-purple-400 transition"
-                title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
-              >
-                {isPlaying ? (
-                  <Pause className="w-4 h-4 fill-current" />
-                ) : (
-                  <Play className="w-4 h-4 fill-current" />
+                {/* Hover Tooltip */}
+                {hoverScrubMs !== null && (
+                  <div
+                    style={{
+                      left: `${(hoverScrubMs / ((durationSec || 1437) * 1000)) * 100}%`,
+                    }}
+                    className="absolute bottom-4 -translate-x-1/2 bg-black/95 text-white font-mono text-[10px] px-2 py-1 rounded shadow-xl border border-white/10 pointer-events-none whitespace-nowrap z-30"
+                  >
+                    <div>{formatTime(hoverScrubMs / 1000)}</div>
+                  </div>
                 )}
-              </button>
+              </div>
+            </div>
 
-              <div className="flex items-center space-x-1 group/vol">
+            {/* Video Control Bar Overlay at Bottom */}
+            <div className="h-10 bg-gradient-to-t from-black/95 via-black/80 to-black/30 px-3 flex items-center justify-between text-white text-xs">
+              {/* Play/Pause & Subtitle Jumps & Volume & Time */}
+              <div className="flex items-center space-x-2">
                 <button
-                  onClick={() => setIsMuted(!isMuted)}
-                  className="hover:text-purple-400 transition"
-                  title={isMuted ? 'Unmute' : 'Mute'}
+                  onClick={jumpToPrevSubtitle}
+                  className="p-1 text-slate-300 hover:text-amber-400 transition"
+                  title="ယခင် စာကြောင်း (Up Arrow)"
                 >
-                  {isMuted ? (
-                    <VolumeX className="w-4 h-4 text-rose-400" />
+                  <Rewind className="w-3.5 h-3.5" />
+                </button>
+
+                <button
+                  onClick={onTogglePlay}
+                  className="p-1 hover:text-purple-400 transition"
+                  title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
+                >
+                  {isPlaying ? (
+                    <Pause className="w-4 h-4 fill-current" />
                   ) : (
-                    <Volume2 className="w-4 h-4" />
+                    <Play className="w-4 h-4 fill-current" />
                   )}
                 </button>
-                <input
-                  type="range"
-                  min={0}
-                  max={1}
-                  step={0.05}
-                  value={isMuted ? 0 : volume}
-                  onChange={(e) => {
-                    const v = Number(e.target.value);
-                    setVolume(v);
-                    setIsMuted(v === 0);
-                  }}
-                  className="w-14 h-1 accent-purple-500 bg-white/30 rounded cursor-pointer hidden group-hover/vol:inline-block"
-                />
-              </div>
 
-              <span className="font-mono text-[11px] text-slate-200">
-                {formatTime(currentTimeMs / 1000)} / {formatTime(durationSec || 1437)}
-              </span>
-
-              {customVideoFileName && (
-                <span className="hidden sm:inline-block text-[10px] text-purple-300 truncate max-w-[120px] opacity-80">
-                  {customVideoFileName}
-                </span>
-              )}
-            </div>
-
-            {/* Right Video Controls: Speed, Settings, Fullscreen */}
-            <div className="flex items-center space-x-1.5 sm:space-x-2">
-              {/* Playback Speed Selector */}
-              <div className="flex items-center space-x-1 bg-black/40 px-1.5 py-0.5 rounded border border-white/10 text-[11px]">
-                <Gauge className="w-3 h-3 text-purple-400" />
-                <select
-                  value={playbackRate}
-                  onChange={(e) => setPlaybackRate(Number(e.target.value))}
-                  className="bg-transparent text-[10px] text-slate-200 focus:outline-none cursor-pointer"
-                  title="Playback Speed"
+                <button
+                  onClick={jumpToNextSubtitle}
+                  className="p-1 text-slate-300 hover:text-amber-400 transition"
+                  title="နောက် စာကြောင်း (Down Arrow)"
                 >
-                  <option value={0.5} className="bg-[#12131d]">0.5x</option>
-                  <option value={0.75} className="bg-[#12131d]">0.75x</option>
-                  <option value={1} className="bg-[#12131d]">1.0x</option>
-                  <option value={1.25} className="bg-[#12131d]">1.25x</option>
-                  <option value={1.5} className="bg-[#12131d]">1.5x</option>
-                  <option value={2} className="bg-[#12131d]">2.0x</option>
-                </select>
+                  <FastForward className="w-3.5 h-3.5" />
+                </button>
+
+                {/* Volume slider control */}
+                <div className="flex items-center space-x-1 group/vol">
+                  <button
+                    onClick={() => setIsMuted(!isMuted)}
+                    className="p-1 hover:text-purple-400 transition text-slate-300"
+                    title={isMuted ? 'Unmute' : 'Mute'}
+                  >
+                    {isMuted ? (
+                      <VolumeX className="w-4 h-4 text-rose-400" />
+                    ) : (
+                      <Volume2 className="w-4 h-4" />
+                    )}
+                  </button>
+                  <input
+                    type="range"
+                    min={0}
+                    max={1}
+                    step={0.05}
+                    value={isMuted ? 0 : volume}
+                    onChange={(e) => {
+                      const v = Number(e.target.value);
+                      setVolume(v);
+                      setIsMuted(v === 0);
+                    }}
+                    className="w-14 h-1 accent-purple-500 bg-white/30 rounded cursor-pointer hidden group-hover/vol:inline-block"
+                  />
+                </div>
+
+                <span className="font-mono text-[11px] text-slate-200">
+                  <span className="text-purple-300 font-bold">{formatTime(currentTimeMs / 1000)}</span>
+                  <span className="text-slate-400"> / {formatTime(durationSec || 1437)}</span>
+                </span>
               </div>
 
-              <button
-                onClick={() => setIsStylePopoverOpen(!isStylePopoverOpen)}
-                className={`p-1 transition ${
-                  isStylePopoverOpen ? 'text-purple-400' : 'hover:text-purple-400 text-slate-300'
-                }`}
-                title="စာတန်းစတိုင် (Subtitle Style)"
-              >
-                <Settings className="w-4 h-4" />
-              </button>
+              {/* Right Video Controls: Speed, Style, PiP, Fullscreen */}
+              <div className="flex items-center space-x-1.5 sm:space-x-2">
+                {/* Playback Speed Selector */}
+                <div className="flex items-center space-x-1 bg-black/50 px-1.5 py-0.5 rounded border border-white/10 text-[11px]">
+                  <Gauge className="w-3 h-3 text-purple-400" />
+                  <select
+                    value={playbackRate}
+                    onChange={(e) => setPlaybackRate(Number(e.target.value))}
+                    className="bg-transparent text-[10px] text-slate-200 focus:outline-none cursor-pointer"
+                    title="Playback Speed"
+                  >
+                    <option value={0.5} className="bg-[#12131d]">0.5x</option>
+                    <option value={0.75} className="bg-[#12131d]">0.75x</option>
+                    <option value={1} className="bg-[#12131d]">1.0x</option>
+                    <option value={1.25} className="bg-[#12131d]">1.25x</option>
+                    <option value={1.5} className="bg-[#12131d]">1.5x</option>
+                    <option value={2} className="bg-[#12131d]">2.0x</option>
+                  </select>
+                </div>
 
-              <button
-                onClick={toggleFullscreen}
-                className="p-1 hover:text-purple-400 transition text-slate-300"
-                title="Fullscreen"
-              >
-                <Maximize2 className="w-4 h-4" />
-              </button>
+                {customVideoUrl && (
+                  <button
+                    onClick={handleTogglePiP}
+                    className="p-1 hover:text-purple-400 transition text-slate-300"
+                    title="Picture in Picture (PiP)"
+                  >
+                    <Film className="w-3.5 h-3.5" />
+                  </button>
+                )}
+
+                <button
+                  onClick={() => setIsStylePopoverOpen(!isStylePopoverOpen)}
+                  className={`p-1 transition ${
+                    isStylePopoverOpen ? 'text-purple-400' : 'hover:text-purple-400 text-slate-300'
+                  }`}
+                  title="စာတန်းစတိုင် (Subtitle Style)"
+                >
+                  <Settings className="w-4 h-4" />
+                </button>
+
+                <button
+                  onClick={toggleFullscreen}
+                  className="p-1 hover:text-purple-400 transition text-slate-300"
+                  title="Fullscreen"
+                >
+                  <Maximize2 className="w-4 h-4" />
+                </button>
+              </div>
             </div>
           </div>
 
@@ -1339,47 +1581,101 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
 
                 {/* Column 3: Subtitle Text Content Area */}
                 <div
-                  className="flex-1 p-2.5 flex flex-col justify-center"
+                  className="flex-1 p-3 flex flex-col justify-center gap-1.5"
                   onClick={(e) => e.stopPropagation()}
                 >
                   {/* Bilingual Mode: displays both original and translation */}
                   {displayMode === 'bilingual' ? (
-                    <div className="space-y-1">
-                      <div className="text-[11px] text-slate-400 font-sans select-text">
-                        {item.originalText}
+                    <div className="space-y-2">
+                      {/* Original Source Reference Bubble */}
+                      <div className="text-[12px] sm:text-[13px] text-slate-300 font-sans tracking-wide leading-relaxed bg-[#0a0c16] border border-[#1e2238] px-3 py-2 rounded-lg select-text break-words flex items-start justify-between gap-2 shadow-xs">
+                        <div className="flex-1">
+                          <span className="text-[9px] uppercase font-mono text-purple-400 font-bold block mb-0.5 tracking-wider">
+                            Source ({targetLanguage === 'English' ? 'Myanmar' : 'Original'}):
+                          </span>
+                          <span className="text-slate-200">{item.originalText || '(No source text)'}</span>
+                        </div>
+                      </div>
+
+                      {/* Myanmar Translated Textarea */}
+                      <div className="relative">
+                        <textarea
+                          rows={Math.max(1, Math.min(4, Math.ceil(((item.translatedText || '').length) / 45) || 1))}
+                          value={item.translatedText || ''}
+                          onChange={(e) => onUpdateItem(item.id, { translatedText: e.target.value })}
+                          placeholder="မြန်မာဘာသာ ရေးသားပြင်ဆင်ပါ..."
+                          className={`w-full bg-[#0c0e1a] hover:bg-[#101324] focus:bg-[#13162b] text-[14px] sm:text-[15px] font-sans font-medium text-slate-100 placeholder:text-slate-500 focus:outline-none border rounded-lg px-3.5 py-2.5 transition-all resize-y min-h-[44px] leading-[1.8] shadow-inner ${
+                            isActive
+                              ? 'border-purple-500/80 ring-2 ring-purple-500/20 text-white'
+                              : 'border-[#22263d] focus:border-purple-500/70 focus:ring-2 focus:ring-purple-500/15'
+                          }`}
+                        />
+                        <div className="flex items-center justify-between mt-1 px-1 text-[10px] text-slate-500">
+                          <span className="flex items-center space-x-1">
+                            {item.translatedText ? (
+                              <span className="inline-flex items-center text-emerald-400 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1" />
+                                ဘာသာပြန်ပြီး
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center text-amber-400 font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-amber-400 mr-1" />
+                                ဘာသာပြန်ရန် ကျန်ရှိ
+                              </span>
+                            )}
+                          </span>
+                          <span className="font-mono text-slate-400">
+                            {(item.translatedText || '').length} chars
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+                  ) : displayMode === 'second' ? (
+                    /* Second Mode: Edits original English/Japanese */
+                    <div className="relative">
+                      <div className="flex items-center justify-between mb-1 px-0.5">
+                        <span className="text-[10px] uppercase font-mono text-sky-400 font-bold tracking-wider">
+                          Original Text (Source):
+                        </span>
+                        <span className="font-mono text-[10px] text-slate-400">
+                          {(item.originalText || '').length} chars
+                        </span>
                       </div>
                       <textarea
-                        rows={1}
-                        value={item.translatedText || ''}
-                        onChange={(e) => onUpdateItem(item.id, { translatedText: e.target.value })}
-                        placeholder="မြန်မာဘာသာပြန်..."
-                        className={`w-full bg-transparent text-sm font-sans font-medium text-slate-100 focus:outline-none focus:ring-1 rounded p-1 transition resize-none ${
-                          isActive ? 'focus:ring-purple-400' : 'focus:ring-slate-600'
+                        rows={Math.max(1, Math.min(4, Math.ceil(((item.originalText || '').length) / 45) || 1))}
+                        value={item.originalText || ''}
+                        onChange={(e) => onUpdateItem(item.id, { originalText: e.target.value })}
+                        placeholder="Original text..."
+                        className={`w-full bg-[#0c0e1a] hover:bg-[#101324] focus:bg-[#13162b] text-[13.5px] sm:text-[14px] font-sans font-medium text-slate-200 placeholder:text-slate-500 focus:outline-none border rounded-lg px-3.5 py-2.5 transition-all resize-y min-h-[44px] leading-relaxed shadow-inner ${
+                          isActive
+                            ? 'border-sky-500/80 ring-2 ring-sky-500/20 text-white'
+                            : 'border-[#22263d] focus:border-sky-500/70 focus:ring-2 focus:ring-sky-500/15'
                         }`}
                       />
                     </div>
-                  ) : displayMode === 'second' ? (
-                    /* Second Mode: Edits original English */
-                    <textarea
-                      rows={1}
-                      value={item.originalText || ''}
-                      onChange={(e) => onUpdateItem(item.id, { originalText: e.target.value })}
-                      placeholder="Original text..."
-                      className={`w-full bg-transparent text-sm font-sans font-medium text-slate-200 focus:outline-none focus:ring-1 rounded p-1 transition resize-none ${
-                        isActive ? 'focus:ring-purple-400 text-purple-200' : 'focus:ring-slate-600'
-                      }`}
-                    />
                   ) : (
                     /* Main Mode: Edits Myanmar translated text */
-                    <textarea
-                      rows={1}
-                      value={item.translatedText || ''}
-                      onChange={(e) => onUpdateItem(item.id, { translatedText: e.target.value })}
-                      placeholder="မြန်မာဘာသာ ရေးသားပါ..."
-                      className={`w-full bg-transparent text-sm font-sans font-medium text-slate-100 focus:outline-none focus:ring-1 rounded p-1 transition resize-none ${
-                        isActive ? 'focus:ring-purple-400' : 'focus:ring-slate-600'
-                      }`}
-                    />
+                    <div className="relative">
+                      <div className="flex items-center justify-between mb-1 px-0.5">
+                        <span className="text-[10px] font-bold text-purple-300">
+                          မြန်မာဘာသာ စာတန်းထိုး (Myanmar Subtitle):
+                        </span>
+                        <span className="font-mono text-[10px] text-slate-400">
+                          {(item.translatedText || '').length} စာလုံး
+                        </span>
+                      </div>
+                      <textarea
+                        rows={Math.max(1, Math.min(4, Math.ceil(((item.translatedText || '').length) / 45) || 1))}
+                        value={item.translatedText || ''}
+                        onChange={(e) => onUpdateItem(item.id, { translatedText: e.target.value })}
+                        placeholder="မြန်မာဘာသာ ရေးသားပြင်ဆင်ပါ..."
+                        className={`w-full bg-[#0c0e1a] hover:bg-[#101324] focus:bg-[#13162b] text-[14px] sm:text-[15px] font-sans font-medium text-slate-100 placeholder:text-slate-500 focus:outline-none border rounded-lg px-3.5 py-2.5 transition-all resize-y min-h-[44px] leading-[1.8] shadow-inner ${
+                          isActive
+                            ? 'border-purple-500/80 ring-2 ring-purple-500/20 text-white'
+                            : 'border-[#22263d] focus:border-purple-500/70 focus:ring-2 focus:ring-purple-500/15'
+                        }`}
+                      />
+                    </div>
                   )}
                 </div>
               </div>

@@ -54,7 +54,12 @@ import {
 } from 'lucide-react';
 import { AdminFirebaseUsers } from './AdminFirebaseUsers';
 import { notify, showConfirm, showAlert } from './AlertToastProvider';
-import { AppUserProfile } from '../lib/firebase';
+import {
+  AppUserProfile,
+  getFirestoreSystemKeyPool,
+  saveFirestoreSystemKeyPool,
+} from '../lib/firebase';
+import { Cloud, CloudCheck, CloudUpload, Database } from 'lucide-react';
 
 interface SavedFileMeta {
   id: string;
@@ -404,6 +409,36 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
           totalPoolUsedLines: data.totalPoolUsedLines || 0,
           totalPoolTodayLines: data.totalPoolTodayLines || 0,
         });
+
+        // Auto-recovery: If server pool is empty, attempt auto restore from Firestore
+        if ((!data.keys || data.keys.length === 0) && isUserAdmin) {
+          getFirestoreSystemKeyPool()
+            .then((cloudData) => {
+              const cloudKeys = (cloudData as any)?.geminiKeyPool || (cloudData as any)?.keys || [];
+              if (Array.isArray(cloudKeys) && cloudKeys.length > 0) {
+                fetch('/api/admin/gemini-keys/sync-from-cloud', {
+                  method: 'POST',
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'x-admin-password': pass,
+                  },
+                  body: JSON.stringify({
+                    keys: cloudKeys,
+                    strategy: cloudData?.strategy || 'round_robin',
+                  }),
+                })
+                  .then((r) => r.json())
+                  .then((synced) => {
+                    if (synced.success) {
+                      notify.info(`Cloud Firestore မှ Gemini Key (${cloudKeys.length}) ခု အလိုအလျောက် ရယူပေးပြီးပါပြီ`);
+                      fetchGeminiKeys(pass);
+                    }
+                  })
+                  .catch(() => {});
+              }
+            })
+            .catch(() => {});
+        }
       }
     } catch (err) {
       console.error('Failed to load Gemini Key Pool:', err);
@@ -443,6 +478,18 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
         });
         setBulkKeysInput('');
         fetchGeminiKeys();
+
+        // Auto backup to Firestore in background
+        fetch('/api/admin/gemini-keys/raw-export', {
+          headers: { 'x-admin-password': adminPassword },
+        })
+          .then((r) => r.json())
+          .then((exportData) => {
+            if (exportData.success && Array.isArray(exportData.geminiKeyPool)) {
+              saveFirestoreSystemKeyPool(exportData.geminiKeyPool, exportData.strategy || 'round_robin');
+            }
+          })
+          .catch(() => {});
       } else {
         setAddKeyMessage({ type: 'error', text: data.error || 'Key များ ထည့်သွင်း၍ မရပါ' });
       }
@@ -711,6 +758,73 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
       }
     } catch (err) {
       console.error('Error updating strategy:', err);
+    }
+  };
+
+  // Cloud Firestore Sync: Save current key pool to Firestore
+  const [isSyncingToCloud, setIsSyncingToCloud] = useState(false);
+  const [isRestoringFromCloud, setIsRestoringFromCloud] = useState(false);
+
+  const handleBackupKeysToFirestore = async () => {
+    setIsSyncingToCloud(true);
+    try {
+      // Fetch full unmasked keys from server
+      const res = await fetch('/api/admin/gemini-keys/raw-export', {
+        headers: { 'x-admin-password': adminPassword },
+      });
+      const data = await res.json();
+      if (!res.ok || !data.success) {
+        throw new Error(data.error || 'Server မှ Key အချက်အလက်များ ရယူ၍မရပါ');
+      }
+
+      const keysToSave = data.geminiKeyPool || [];
+      const strat = data.strategy || keyPoolStats.strategy || 'round_robin';
+
+      await saveFirestoreSystemKeyPool(keysToSave, strat);
+      notify.success(`Gemini Key (${keysToSave.length}) ခုနှင့် ဖွဲ့စည်းမှုများကို Cloud Firestore Database တွင် သိမ်းဆည်းပြီးပါပြီ! App update လုပ်သော်လည်း ပျက်မသွားတော့ပါ`);
+    } catch (err: any) {
+      console.error('Failed to backup keys to Firestore:', err);
+      notify.error(err.message || 'Cloud Firestore သို့ သိမ်းဆည်းရာတွင် အမှားဖြစ်ပေါ်ပါသည်');
+    } finally {
+      setIsSyncingToCloud(false);
+    }
+  };
+
+  const handleRestoreKeysFromFirestore = async () => {
+    setIsRestoringFromCloud(true);
+    try {
+      const cloudData = await getFirestoreSystemKeyPool();
+      const cloudKeys = (cloudData as any)?.geminiKeyPool || (cloudData as any)?.keys || [];
+      if (!cloudData || !Array.isArray(cloudKeys) || cloudKeys.length === 0) {
+        notify.info('Cloud Firestore တွင် သိမ်းဆည်းထားသော Gemini Key မရှိသေးပါ (သို့မဟုတ် မတွေ့ပါ)');
+        return;
+      }
+
+      // Sync into server
+      const res = await fetch('/api/admin/gemini-keys/sync-from-cloud', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-admin-password': adminPassword,
+        },
+        body: JSON.stringify({
+          keys: cloudKeys,
+          strategy: cloudData.strategy || 'round_robin',
+        }),
+      });
+
+      const data = await res.json();
+      if (res.ok && data.success) {
+        notify.success(`Cloud Firestore မှ (${cloudKeys.length}) Keys ကို ဆာဗာသို့ အောင်မြင်စွာ ပြန်လည် ထည့်သွင်းပြီးပါပြီ!`);
+        fetchGeminiKeys();
+      } else {
+        notify.error(data.error || 'ဆာဗာသို့ Key များ sync လုပ်၍ မရပါ');
+      }
+    } catch (err: any) {
+      console.error('Failed to restore keys from Firestore:', err);
+      notify.error(err.message || 'Cloud Firestore မှ Key များ ရယူရာတွင် အမှားဖြစ်ပေါ်ပါသည်');
+    } finally {
+      setIsRestoringFromCloud(false);
     }
   };
 
@@ -2470,7 +2584,29 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
               </p>
             </div>
 
-            <div className="flex items-center space-x-2 shrink-0">
+            <div className="flex flex-wrap items-center gap-2 shrink-0">
+              <button
+                type="button"
+                onClick={handleBackupKeysToFirestore}
+                disabled={isSyncingToCloud || keyPoolKeys.length === 0}
+                className="px-3.5 py-2 bg-indigo-600/20 hover:bg-indigo-600/30 text-indigo-300 border border-indigo-500/30 text-xs font-semibold rounded-xl transition flex items-center space-x-2 disabled:opacity-50"
+                title="Save current keys into Firestore Database permanently"
+              >
+                <CloudUpload className={`w-3.5 h-3.5 ${isSyncingToCloud ? 'animate-bounce' : ''}`} />
+                <span>{isSyncingToCloud ? 'Cloud တွင် သိမ်းဆည်းနေသည်...' : 'Cloud Firestore သို့ သိမ်းမည်'}</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={handleRestoreKeysFromFirestore}
+                disabled={isRestoringFromCloud}
+                className="px-3.5 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/30 text-xs font-semibold rounded-xl transition flex items-center space-x-2 disabled:opacity-50"
+                title="Restore stored keys from Cloud Firestore"
+              >
+                <Database className={`w-3.5 h-3.5 ${isRestoringFromCloud ? 'animate-spin' : ''}`} />
+                <span>{isRestoringFromCloud ? 'Cloud မှ ရယူနေသည်...' : 'Cloud မှ ပြန်ဆွဲမည်'}</span>
+              </button>
+
               <button
                 type="button"
                 onClick={handleTestAllKeys}

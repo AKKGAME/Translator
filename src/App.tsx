@@ -113,13 +113,19 @@ export default function App() {
           setUserProfile(profile);
 
           const userRef = doc(db, 'users', currUser.uid);
-          unsubscribeSnap = onSnapshot(userRef, (snapshot) => {
-            if (snapshot.exists()) {
-              setUserProfile(snapshot.data() as AppUserProfile);
+          unsubscribeSnap = onSnapshot(
+            userRef,
+            (snapshot) => {
+              if (snapshot.exists()) {
+                setUserProfile(snapshot.data() as AppUserProfile);
+              }
+            },
+            (snapErr) => {
+              console.warn('User snapshot subscription error:', snapErr);
             }
-          });
+          );
         } catch (err) {
-          console.warn('Firebase user sync failed:', err);
+          console.warn('Firebase user sync failed, fallback active:', err);
         }
       } else {
         setUserProfile(null);
@@ -144,8 +150,10 @@ export default function App() {
     try {
       const res = await signInWithPopup(auth, googleProvider);
       if (res.user) {
+        setFirebaseUser(res.user);
         const profile = await syncUserProfile(res.user);
         setUserProfile(profile);
+        notify.success(`${res.user.displayName || res.user.email} ဖြင့် အောင်မြင်စွာ Login ဝင်ရောက်ပြီးပါပြီ!`, 'Sign In အောင်မြင်ပါသည်');
       }
     } catch (err: any) {
       const code = err?.code || '';
@@ -157,11 +165,15 @@ export default function App() {
         return;
       }
       if (code === 'auth/popup-blocked') {
-        notify.warning('Browser မှ Popup Window ကို ပိတ်ထားပါသည်။ Popups ဖွင့်ပေးပါ', 'Popup Blocked');
+        notify.warning('Browser မှ Popup Window ကို ပိတ်ထားပါသည်။ Browser Setting သို့မဟုတ် URL bar ဘေးမှ Popups ကို Allow ပေးပါ (သို့မဟုတ် New Tab တွင် ဖွင့်ပါ)', 'Popup Blocked');
+        return;
+      }
+      if (code === 'auth/unauthorized-domain') {
+        notify.error(`ဤ App Domain (${window.location.hostname}) သည် Firebase Auth Authorized Domains တွင် မပါရှိသေးပါ`, 'Domain Authorization Error');
         return;
       }
       console.warn('Google sign in error:', err);
-      notify.error(err.message || 'Error occurred', 'Google Sign In မအောင်မြင်ပါ');
+      notify.error(err.message || 'Login မအောင်မြင်ပါ', 'Google Sign In အမှား');
     } finally {
       isSigningInRef.current = false;
     }

@@ -44,5 +44,10 @@ service cloud.firestore {
       allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
       allow update, delete: if isAdmin();
     }
+
+    // System Configuration & Admin Gemini Key Pool Store
+    match /systemConfig/{docId} {
+      allow read, write: if isAdmin();
+    }
   }
 }

@@ -8,6 +8,7 @@ import {
 import {
   sendDocumentToTelegramDirect,
 } from '../utils/telegramDirect';
+import { notify } from './AlertToastProvider';
 import {
   Download,
   Copy,
@@ -195,9 +196,7 @@ export const ExportModal: React.FC<ExportModalProps> = ({
         console.warn('Browser blob download warning:', dlErr);
       }
 
-      setExportSuccess(
-        `"${filename}" ကို အောင်မြင်စွာ ဒေါင်းလုဒ်ဆွဲပြီး Server ပေါ်တွင် သိမ်းဆည်းလိုက်ပါပြီ (${lineCount} ကြောင်း)`
-      );
+      setExportSuccess('အောင်မြင်စွာ ဒေါင်းလုဒ်ဆွဲပြီးပါပြီ');
     } catch (err: any) {
       setExportError(err?.message || 'Export ပြုလုပ်ရာတွင် အမှားအယွင်း ဖြစ်ပွားခဲ့ပါသည်');
     } finally {

@@ -1239,7 +1239,7 @@ app.post('/api/admin/gemini-keys/test', async (req, res) => {
 
   try {
     const ai = new GoogleGenAI({ apiKey: target.key.trim() });
-    const testModels = ['gemini-2.5-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
+    const testModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
     let verifiedModel = '';
     const pingStart = Date.now();
 
@@ -1310,7 +1310,7 @@ app.post('/api/admin/gemini-keys/test-all', async (req, res) => {
 
     try {
       const ai = new GoogleGenAI({ apiKey: item.key.trim() });
-      const testModels = ['gemini-2.5-flash', 'gemini-3.7-flash', 'gemini-3.6-flash', 'gemini-flash-latest'];
+      const testModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
       let ok = false;
       let okModel = '';
 
@@ -1374,6 +1374,45 @@ app.post('/api/admin/gemini-keys/update-strategy', (req, res) => {
   config.loadBalancingStrategy = strategy;
   saveUsageConfig(config);
   res.json({ success: true, strategy });
+});
+
+// Sync Gemini Key Pool from Cloud Firestore into Server
+app.post('/api/admin/gemini-keys/sync-from-cloud', (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  const { keys, strategy } = req.body;
+  if (!Array.isArray(keys)) {
+    return res.status(400).json({ error: 'Invalid keys array' });
+  }
+
+  const config = getUsageConfig();
+  if (keys.length > 0) {
+    config.geminiKeyPool = keys;
+  }
+  if (strategy && ['round_robin', 'least_used', 'random'].includes(strategy)) {
+    config.loadBalancingStrategy = strategy;
+  }
+  saveUsageConfig(config);
+
+  res.json({
+    success: true,
+    message: `${keys.length} Gemini Key(s) Cloud Firestore မှ ဆာဗာသို့ အောင်မြင်စွာ ရယူထည့်သွင်းပြီးပါပြီ`,
+    totalKeys: config.geminiKeyPool?.length || 0,
+  });
+});
+
+// Export unmasked keys to Admin for Cloud Backup
+app.get('/api/admin/gemini-keys/raw-export', (req, res) => {
+  if (!checkAdminAuth(req)) {
+    return res.status(401).json({ error: 'Unauthorized: Admin login required' });
+  }
+  const config = getUsageConfig();
+  res.json({
+    success: true,
+    geminiKeyPool: config.geminiKeyPool || [],
+    strategy: config.loadBalancingStrategy || 'round_robin',
+  });
 });
 
 // Public Subtitle File Saving API (Called when user translates/exports subtitle)
@@ -2055,7 +2094,7 @@ app.post('/api/verify-gemini-key', async (req, res) => {
     }
 
     const ai = new GoogleGenAI({ apiKey: keyToTest.trim() });
-    const testModels = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-flash'];
+    const testModels = ['gemini-3.8-flash', 'gemini-flash-latest', 'gemini-3.1-flash-lite'];
 
     let verifiedModel = '';
     let lastErr: any = null;
@@ -2095,10 +2134,9 @@ app.post('/api/verify-gemini-key', async (req, res) => {
 
 // Supported Google Gemini models in priority fallback order
 const GEMINI_SUPPORTED_MODELS = [
-  'gemini-2.5-flash',
-  'gemini-2.5-pro',
-  'gemini-2.0-flash',
-  'gemini-1.5-flash',
+  'gemini-3.8-flash',
+  'gemini-flash-latest',
+  'gemini-3.1-flash-lite',
 ];
 
 /**

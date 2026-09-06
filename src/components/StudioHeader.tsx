@@ -2,9 +2,6 @@ import React, { useState, useRef, useEffect } from 'react';
 import {
   Plus,
   Cloud,
-  Undo2,
-  Redo2,
-  Keyboard,
   ChevronDown,
   Upload,
   Film,
@@ -27,7 +24,7 @@ interface StudioHeaderProps {
   onRedo?: () => void;
   canUndo?: boolean;
   canRedo?: boolean;
-  onOpenShortcuts: () => void;
+  onOpenShortcuts?: () => void;
   onOpenAdmin?: () => void;
   onOpenOnlineSubtitles?: () => void;
   hasSubtitles: boolean;
@@ -202,53 +199,13 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
           <Cloud className="w-3.5 h-3.5 text-slate-300" />
           <span>Export</span>
         </button>
-
-        {/* Divider */}
-        <div className="h-4 w-px bg-[#26293d] mx-0.5" />
-
-        {/* Undo / Redo / Keyboard Icons */}
-        <div className="flex items-center space-x-1">
-          <button
-            onClick={onUndo}
-            disabled={!canUndo}
-            className={`p-1.5 rounded transition ${
-              canUndo
-                ? 'text-slate-300 hover:bg-[#25283a] hover:text-white'
-                : 'text-slate-600 cursor-not-allowed'
-            }`}
-            title="ပြန်ပြင်မည် (Undo: Ctrl+Z)"
-          >
-            <Undo2 className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            onClick={onRedo}
-            disabled={!canRedo}
-            className={`p-1.5 rounded transition ${
-              canRedo
-                ? 'text-slate-300 hover:bg-[#25283a] hover:text-white'
-                : 'text-slate-600 cursor-not-allowed'
-            }`}
-            title="ရှေ့သို့ပြန်သွားမည် (Redo: Ctrl+Y)"
-          >
-            <Redo2 className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            onClick={onOpenShortcuts}
-            className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-[#25283a] rounded transition"
-            title="ကီးဘုတ် ဖြတ်လမ်းများ (Keyboard Shortcuts)"
-          >
-            <Keyboard className="w-3.5 h-3.5" />
-          </button>
-        </div>
       </div>
 
       {/* Right Controls: User Account / Sign In Profile ONLY */}
       <div className="flex items-center space-x-2 py-1">
         {/* User Account / Credits Button (Business Model Entry) */}
         <div className="flex items-center">
-          {user && profile ? (
+          {user ? (
             <button
               onClick={onOpenUserProfile}
               className="flex items-center space-x-1.5 bg-[#131728] hover:bg-[#1a1f36] border border-[#2b304c] hover:border-purple-500/50 p-1 pr-2 rounded-lg text-xs transition cursor-pointer"
@@ -257,46 +214,45 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
               {user.photoURL ? (
                 <img
                   src={user.photoURL}
-                  alt={profile.displayName || 'User'}
+                  alt={profile?.displayName || user.displayName || 'User'}
                   referrerPolicy="no-referrer"
                   className="w-5 h-5 rounded-full border border-purple-400/50 object-cover"
                 />
               ) : (
                 <div className="w-5 h-5 rounded-full bg-purple-600/30 text-purple-300 text-[10px] font-bold flex items-center justify-center">
-                  {profile.displayName?.[0] || 'U'}
+                  {profile?.displayName?.[0] || user.displayName?.[0] || user.email?.[0] || 'U'}
                 </div>
               )}
               <div className="flex items-center space-x-1">
                 <span className="font-medium text-slate-200 text-[11px] max-w-[80px] truncate hidden sm:inline">
-                  {profile.displayName?.split(' ')[0] || 'User'}
+                  {profile?.displayName?.split(' ')[0] || user.displayName?.split(' ')[0] || user.email?.split('@')[0] || 'User'}
                 </span>
                 <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold flex items-center space-x-1 ${
-                  profile.role === 'admin' || profile.isVip || profile.tier === 'unlimited'
+                  profile?.role === 'admin' || user.email === 'aungkyawkhant.apple@gmail.com' || profile?.isVip || profile?.tier === 'unlimited'
                     ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                     : 'bg-purple-950/70 text-purple-300 border border-purple-700/50'
                 }`}>
-                  {profile.role === 'admin' ? (
+                  {profile?.role === 'admin' || user.email === 'aungkyawkhant.apple@gmail.com' ? (
                     <>
                       <Crown className="w-2.5 h-2.5 text-amber-400 mr-0.5" />
-                      <span className="text-amber-200">Admin:</span>
-                      <span>{(profile.credits ?? 0).toLocaleString()}</span>
+                      <span className="text-amber-200">Admin</span>
                     </>
-                  ) : profile.isVip ? (
+                  ) : profile?.isVip ? (
                     <>
                       <Crown className="w-2.5 h-2.5 text-amber-400 mr-0.5" />
                       <span className="text-amber-200">VIP:</span>
-                      <span>{(profile.credits ?? 0).toLocaleString()}</span>
+                      <span>{(profile?.credits ?? 0).toLocaleString()}</span>
                     </>
                   ) : (
                     <>
                       <Coins className="w-2.5 h-2.5 text-purple-300 mr-0.5" />
-                      <span>{(profile.credits ?? 0).toLocaleString()}</span>
+                      <span>{(profile?.credits ?? 300).toLocaleString()}</span>
                     </>
                   )}
                 </span>
                 {(() => {
-                  const plan = checkUserPlanStatus(profile);
-                  if (plan.hasActivePlan && profile.role !== 'admin') {
+                  const plan = profile ? checkUserPlanStatus(profile) : null;
+                  if (plan && plan.hasActivePlan && profile?.role !== 'admin') {
                     return (
                       <span className="text-[9px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 font-mono font-semibold hidden md:inline">
                         {plan.daysRemaining}d left

@@ -141,40 +141,62 @@ const INITIAL_FREE_CREDITS = 300; // Free welcome credits for every new user
  * Ensures user profile exists in Firestore and syncs profile info
  */
 export async function syncUserProfile(user: FirebaseUser): Promise<AppUserProfile> {
-  const userRef = doc(db, 'users', user.uid);
-  const snap = await getDoc(userRef);
-
   const isAdminEmail = user.email === 'aungkyawkhant.apple@gmail.com';
+  const defaultFallback: AppUserProfile = {
+    uid: user.uid,
+    email: user.email,
+    displayName: user.displayName || user.email?.split('@')[0] || 'User',
+    photoURL: user.photoURL,
+    role: isAdminEmail ? 'admin' : 'user',
+    tier: isAdminEmail ? 'unlimited' : 'free',
+    credits: isAdminEmail ? 999999 : INITIAL_FREE_CREDITS,
+    totalTranslatedLines: 0,
+    isVip: isAdminEmail,
+    createdAt: new Date().toISOString(),
+    lastLoginAt: new Date().toISOString(),
+  };
 
-  if (!snap.exists()) {
-    const newProfile: AppUserProfile = {
-      uid: user.uid,
-      email: user.email,
-      displayName: user.displayName || user.email?.split('@')[0] || 'User',
-      photoURL: user.photoURL,
-      role: isAdminEmail ? 'admin' : 'user',
-      tier: isAdminEmail ? 'unlimited' : 'free',
-      credits: isAdminEmail ? 999999 : INITIAL_FREE_CREDITS,
-      totalTranslatedLines: 0,
-      isVip: isAdminEmail,
-      createdAt: serverTimestamp(),
-      lastLoginAt: serverTimestamp(),
-    };
-    await setDoc(userRef, newProfile);
-    return newProfile;
-  } else {
-    const existing = snap.data() as AppUserProfile;
-    const updates: Partial<AppUserProfile> = {
-      lastLoginAt: serverTimestamp(),
-    };
-    if (isAdminEmail && existing.role !== 'admin') {
-      updates.role = 'admin';
-      updates.tier = 'unlimited';
-      updates.isVip = true;
-      updates.credits = 999999;
+  try {
+    const userRef = doc(db, 'users', user.uid);
+    const snap = await getDoc(userRef);
+
+    if (!snap.exists()) {
+      const newProfile: AppUserProfile = {
+        uid: user.uid,
+        email: user.email,
+        displayName: user.displayName || user.email?.split('@')[0] || 'User',
+        photoURL: user.photoURL,
+        role: isAdminEmail ? 'admin' : 'user',
+        tier: isAdminEmail ? 'unlimited' : 'free',
+        credits: isAdminEmail ? 999999 : INITIAL_FREE_CREDITS,
+        totalTranslatedLines: 0,
+        isVip: isAdminEmail,
+        createdAt: serverTimestamp(),
+        lastLoginAt: serverTimestamp(),
+      };
+      await setDoc(userRef, newProfile);
+      return newProfile;
+    } else {
+      const existing = snap.data() as AppUserProfile;
+      const updates: Partial<AppUserProfile> = {
+        lastLoginAt: serverTimestamp(),
+      };
+      if (isAdminEmail && existing.role !== 'admin') {
+        updates.role = 'admin';
+        updates.tier = 'unlimited';
+        updates.isVip = true;
+        updates.credits = 999999;
+      }
+      try {
+        await updateDoc(userRef, updates as any);
+      } catch (updErr) {
+        console.warn('Could not update lastLoginAt:', updErr);
+      }
+      return { ...existing, ...updates };
     }
-    await updateDoc(userRef, updates as any);
-    return { ...existing, ...updates };
+  } catch (err) {
+    console.warn('syncUserProfile Firestore read/write error, using safe fallback:', err);
+    return defaultFallback;
   }
 }
 
@@ -249,6 +271,51 @@ export async function updateUserPlan(
     isVip: true,
     tier,
   });
+}
+
+/**
+ * Fetch Admin Gemini Key Pool from Firestore Cloud Store
+ */
+export async function getFirestoreSystemKeyPool(): Promise<{
+  geminiKeyPool: any[];
+  strategy?: 'round_robin' | 'least_used' | 'random';
+  updatedAt?: string;
+} | null> {
+  try {
+    const docRef = doc(db, 'systemConfig', 'gemini_key_pool');
+    const snap = await getDoc(docRef);
+    if (snap.exists()) {
+      const data = snap.data();
+      return {
+        geminiKeyPool: Array.isArray(data.geminiKeyPool) ? data.geminiKeyPool : [],
+        strategy: data.strategy || 'round_robin',
+        updatedAt: data.updatedAt || '',
+      };
+    }
+    return null;
+  } catch (err) {
+    console.warn('Could not read systemConfig/gemini_key_pool from Firestore:', err);
+    return null;
+  }
+}
+
+/**
+ * Save Admin Gemini Key Pool directly to Firestore Cloud Store
+ */
+export async function saveFirestoreSystemKeyPool(
+  geminiKeyPool: any[],
+  strategy?: 'round_robin' | 'least_used' | 'random'
+): Promise<void> {
+  const docRef = doc(db, 'systemConfig', 'gemini_key_pool');
+  await setDoc(
+    docRef,
+    {
+      geminiKeyPool,
+      strategy: strategy || 'round_robin',
+      updatedAt: new Date().toISOString(),
+    },
+    { merge: true }
+  );
 }
 
 export { fbSignOut, signInWithPopup, onAuthStateChanged, onSnapshot, doc };

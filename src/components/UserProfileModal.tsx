@@ -82,9 +82,25 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
   if (!isOpen) return null;
 
-  const planStatus = profile
-    ? checkUserPlanStatus(profile)
-    : { hasActivePlan: false, daysRemaining: 0, planName: 'None', isLifetime: false };
+  const activeProfile =
+    profile ||
+    (user
+      ? {
+          uid: user.uid,
+          email: user.email,
+          displayName: user.displayName || user.email?.split('@')[0] || 'User',
+          photoURL: user.photoURL,
+          role: (user.email === 'aungkyawkhant.apple@gmail.com' ? 'admin' : 'user') as 'admin' | 'user',
+          tier: (user.email === 'aungkyawkhant.apple@gmail.com' ? 'unlimited' : 'free') as 'unlimited' | 'free',
+          credits: user.email === 'aungkyawkhant.apple@gmail.com' ? 999999 : 300,
+          totalTranslatedLines: 0,
+          isVip: user.email === 'aungkyawkhant.apple@gmail.com',
+        }
+      : null);
+
+  const planStatus = activeProfile
+    ? checkUserPlanStatus(activeProfile)
+    : { hasActivePlan: false, daysRemaining: 0, planName: 'None', isExpired: false, expiresAtFormatted: 'ဝယ်ယူထားခြင်း မရှိသေးပါ' };
 
   const copyToClipboard = (text: string, field: string) => {
     navigator.clipboard.writeText(text);
@@ -93,7 +109,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
   };
 
   const handleRedeemCode = async () => {
-    if (!promoCodeInput.trim() || !user || !profile) return;
+    if (!promoCodeInput.trim() || !user) return;
     const cleanCode = promoCodeInput.trim().toUpperCase();
     setIsRedeeming(true);
     setRedeemMessage(null);
@@ -319,7 +335,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
 
         {/* Modal Scrollable Body */}
         <div className="p-5 overflow-y-auto space-y-5 flex-1 custom-scrollbar text-xs">
-          {user && profile ? (
+          {user && activeProfile ? (
             <>
               {/* User Profile Bar */}
               <div className="bg-[#131728] border border-[#23273e] p-3.5 rounded-lg flex items-center justify-between">
@@ -327,24 +343,24 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                   {user.photoURL ? (
                     <img
                       src={user.photoURL}
-                      alt={user.displayName || 'User'}
+                      alt={activeProfile.displayName || user.displayName || 'User'}
                       referrerPolicy="no-referrer"
                       className="w-11 h-11 rounded-full border-2 border-purple-500/40 object-cover"
                     />
                   ) : (
                     <div className="w-11 h-11 rounded-full bg-purple-600/30 text-purple-300 font-bold flex items-center justify-center border border-purple-500/30 text-sm">
-                      {user.displayName?.[0] || user.email?.[0] || 'U'}
+                      {activeProfile.displayName?.[0] || user.displayName?.[0] || user.email?.[0] || 'U'}
                     </div>
                   )}
                   <div>
-                    <div className="font-bold text-slate-100 text-sm">{profile.displayName || user.displayName}</div>
+                    <div className="font-bold text-slate-100 text-sm">{activeProfile.displayName || user.displayName}</div>
                     <div className="text-[11px] text-slate-400">{user.email}</div>
                     <div className="flex items-center space-x-2 mt-1">
                       <span className="text-[10px] px-2 py-0.2 rounded bg-purple-950/70 border border-purple-800 text-purple-300 font-mono">
-                        Role: {profile.role.toUpperCase()}
+                        Role: {activeProfile.role.toUpperCase()}
                       </span>
                       <span className="text-[10px] px-2 py-0.2 rounded bg-indigo-950/70 border border-indigo-800 text-indigo-300 font-mono">
-                        Tier: {profile.tier.toUpperCase()}
+                        Tier: {activeProfile.tier.toUpperCase()}
                       </span>
                     </div>
                   </div>
@@ -361,7 +377,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
               </div>
 
               {/* Discreet Admin Switch (Visible Only for Verified Admin) */}
-              {(profile.role === 'admin' || user.email === 'aungkyawkhant.apple@gmail.com') && onOpenAdmin && (
+              {(activeProfile.role === 'admin' || user.email === 'aungkyawkhant.apple@gmail.com') && onOpenAdmin && (
                 <button
                   type="button"
                   onClick={() => {
@@ -639,12 +655,12 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     <span className="text-slate-400 text-[11px] block font-medium">လက်ကျန် စာကြောင်းရေ (Available Credits)</span>
                     <div className="flex items-baseline space-x-2 mt-1">
                       <span className="text-2xl font-black text-amber-300 font-mono">
-                        {(profile.credits ?? 0).toLocaleString()}
+                        {(activeProfile.credits ?? 0).toLocaleString()}
                       </span>
                       <span className="text-xs text-slate-400 font-medium">lines</span>
-                      {(profile.role === 'admin' || profile.tier === 'unlimited') && (
+                      {(activeProfile.role === 'admin' || activeProfile.tier === 'unlimited') && (
                         <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold ml-2">
-                          {profile.role === 'admin' ? 'Admin Access' : 'Unlimited Plan'}
+                          {activeProfile.role === 'admin' ? 'Admin Access' : 'Unlimited Plan'}
                         </span>
                       )}
                     </div>
@@ -658,7 +674,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                 <div className="mt-3 pt-3 border-t border-purple-800/30 flex items-center justify-between text-[11px] text-slate-300">
                   <span>စုစုပေါင်း ဘာသာပြန်ပြီးစီးမှု:</span>
                   <span className="font-mono font-bold text-slate-100">
-                    {(profile.totalTranslatedLines || 0).toLocaleString()} စာကြောင်း
+                    {(activeProfile.totalTranslatedLines || 0).toLocaleString()} စာကြောင်း
                   </span>
                 </div>
               </div>

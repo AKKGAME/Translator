@@ -55,6 +55,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
   onTimeShiftClick,
 }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
+  const videoContainerRef = useRef<HTMLDivElement>(null);
   const listContainerRef = useRef<HTMLDivElement>(null);
   const subItemRefs = useRef<Record<number, HTMLDivElement | null>>({});
 
@@ -64,15 +65,57 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
   const [activeSub, setActiveSub] = useState<SubtitleItem | null>(null);
   const [hasVideoError, setHasVideoError] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
+  const [volume, setVolume] = useState<number>(1);
   const [playbackSpeed, setPlaybackSpeed] = useState<number>(1.0);
   const [subSearch, setSubSearch] = useState('');
   const [autoScroll, setAutoScroll] = useState(true);
   const [showKeyboardHelp, setShowKeyboardHelp] = useState(false);
   const [showAdvancedControls, setShowAdvancedControls] = useState(true);
   const [expandedItemId, setExpandedItemId] = useState<number | null>(null);
+  const [isControlsVisible, setIsControlsVisible] = useState(true);
+  const [hoverScrubMs, setHoverScrubMs] = useState<number | null>(null);
+  const [rippleEffect, setRippleEffect] = useState<{ type: 'play' | 'pause' | 'skip-fwd' | 'skip-back'; key: number } | null>(null);
+  const controlsTimeoutRef = useRef<NodeJS.Timeout | null>(null);
   // Target field to edit: 'translated' (အသစ်/မြန်မာဘာသာ) or 'original' (မူရင်း/အင်္ဂလိပ်)
   const [editTarget, setEditTarget] = useState<'translated' | 'original'>('translated');
   const [customVideoFileName, setCustomVideoFileName] = useState<string | null>(null);
+
+  // Auto-hide controls effect when playing
+  useEffect(() => {
+    if (isPlaying) {
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+      controlsTimeoutRef.current = setTimeout(() => {
+        setIsControlsVisible(false);
+      }, 2500);
+    } else {
+      setIsControlsVisible(true);
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    }
+    return () => {
+      if (controlsTimeoutRef.current) clearTimeout(controlsTimeoutRef.current);
+    };
+  }, [isPlaying]);
+
+  const handlePlayerMouseMove = () => {
+    setIsControlsVisible(true);
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+    if (isPlaying) {
+      controlsTimeoutRef.current = setTimeout(() => {
+        setIsControlsVisible(false);
+      }, 2500);
+    }
+  };
+
+  const handlePlayerMouseLeave = () => {
+    if (controlsTimeoutRef.current) {
+      clearTimeout(controlsTimeoutRef.current);
+    }
+    if (isPlaying) {
+      setIsControlsVisible(false);
+    }
+  };
 
   // Sync playback speed with video element
   useEffect(() => {
@@ -134,6 +177,85 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
     if (!videoRef.current) return;
     videoRef.current.muted = !isMuted;
     setIsMuted(!isMuted);
+  };
+
+  const handleVolumeChange = (newVol: number) => {
+    setVolume(newVol);
+    if (videoRef.current) {
+      videoRef.current.volume = newVol;
+      videoRef.current.muted = newVol === 0;
+      setIsMuted(newVol === 0);
+    }
+  };
+
+  const toggleFullscreen = () => {
+    if (!videoContainerRef.current) return;
+    if (document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    } else {
+      videoContainerRef.current.requestFullscreen().catch(() => {});
+    }
+  };
+
+  const togglePiP = async () => {
+    if (!videoRef.current) return;
+    try {
+      if (document.pictureInPictureElement) {
+        await document.exitPictureInPicture();
+      } else if (document.pictureInPictureEnabled) {
+        await videoRef.current.requestPictureInPicture();
+      }
+    } catch (err) {
+      console.warn('PiP failed', err);
+    }
+  };
+
+  const handleVideoContainerClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('input') || target.closest('.control-interactive')) {
+      return;
+    }
+    const nextPlay = !isPlaying;
+    togglePlay();
+    setRippleEffect({
+      type: nextPlay ? 'play' : 'pause',
+      key: Date.now(),
+    });
+  };
+
+  const handleVideoContainerDoubleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const target = e.target as HTMLElement;
+    if (target.closest('button') || target.closest('input') || target.closest('.control-interactive')) {
+      return;
+    }
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const width = rect.width;
+
+    if (clickX < width * 0.35) {
+      skipSeconds(-5);
+      setRippleEffect({ type: 'skip-back', key: Date.now() });
+    } else if (clickX > width * 0.65) {
+      skipSeconds(5);
+      setRippleEffect({ type: 'skip-fwd', key: Date.now() });
+    } else {
+      toggleFullscreen();
+    }
+  };
+
+  const handleScrubberClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!videoRef.current || !durationSec) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    const targetMs = Math.round(pct * durationSec * 1000);
+    jumpToTime(targetMs, isPlaying);
+  };
+
+  const handleScrubberMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!durationSec) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
+    setHoverScrubMs(Math.round(pct * durationSec * 1000));
   };
 
   const handleSeek = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -258,16 +380,6 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
       if (!item.translatedText) return;
       const cleaned = cleanSoundEffects(item.translatedText);
       onUpdateItem(itemId, { translatedText: cleaned });
-    }
-  };
-
-  const toggleFullscreen = () => {
-    if (videoRef.current && videoRef.current.parentElement) {
-      if (document.fullscreenElement) {
-        document.exitFullscreen();
-      } else {
-        videoRef.current.parentElement.requestFullscreen().catch(() => {});
-      }
     }
   };
 
@@ -427,7 +539,17 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
         {/* Left 2 Cols: Video Player & Controls & Live Subtitle Panel */}
         <div className="lg:col-span-2 space-y-4">
           {/* Main Video Box */}
-          <div className="relative bg-black rounded-lg overflow-hidden shadow-2xl border border-[#212734] aspect-video group">
+          <div
+            ref={videoContainerRef}
+            onMouseMove={handlePlayerMouseMove}
+            onMouseEnter={handlePlayerMouseMove}
+            onMouseLeave={handlePlayerMouseLeave}
+            onClick={handleVideoContainerClick}
+            onDoubleClick={handleVideoContainerDoubleClick}
+            className={`relative bg-black rounded-lg overflow-hidden shadow-2xl border border-[#212734] aspect-video select-none transition-all ${
+              isPlaying && !isControlsVisible ? 'cursor-none' : 'cursor-default'
+            }`}
+          >
             <video
               ref={videoRef}
               src={videoConfig.videoUrl}
@@ -436,12 +558,12 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
               onError={handleVideoError}
               onPlay={() => setIsPlaying(true)}
               onPause={() => setIsPlaying(false)}
-              className="w-full h-full object-contain"
+              className="w-full h-full object-contain pointer-events-none"
             />
 
             {/* Video Error Fallback Notice */}
             {hasVideoError && (
-              <div className="absolute inset-0 bg-[#07090e]/95 flex flex-col items-center justify-center p-6 text-center text-slate-300 space-y-3 z-10">
+              <div className="absolute inset-0 bg-[#07090e]/95 flex flex-col items-center justify-center p-6 text-center text-slate-300 space-y-3 z-30">
                 <Film className="w-10 h-10 text-amber-400" />
                 <div className="font-bold text-slate-100 text-sm">
                   ဗီဒီယို ဖိုင် ဖွင့်၍ မရပါ သို့မဟုတ် မူရင်း URL တိုက်ရိုက် မရရှိနိုင်ပါ
@@ -449,7 +571,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                 <p className="text-xs text-slate-400 max-w-md">
                   အောက်ပါ "မိမိ ဗီဒီယိုဖိုင် ထည့်သွင်းမည်" ခလုတ်မှ မိမိစက်ထဲရှိ MKV, MP4, WebM စသည့် Video ဖိုင်များကို ရွေးချယ် ထည့်သွင်း ကြည့်ရှုနိုင်ပါသည်။
                 </p>
-                <label className="mt-2 inline-flex items-center space-x-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold px-4 py-2 rounded-md cursor-pointer text-xs transition shadow-lg">
+                <label className="mt-2 inline-flex items-center space-x-2 bg-emerald-500 hover:bg-emerald-600 text-slate-950 font-semibold px-4 py-2 rounded-md cursor-pointer text-xs transition shadow-lg control-interactive">
                   <Upload className="w-4 h-4" />
                   <span>မိမိ ဗီဒီယိုဖိုင် (MKV/MP4/WebM) ထည့်သွင်းမည်</span>
                   <input
@@ -462,14 +584,97 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
               </div>
             )}
 
+            {/* Top Video Header Overlay (Auto-Hiding) */}
+            <div
+              className={`absolute top-0 left-0 right-0 p-3 bg-gradient-to-b from-black/80 via-black/40 to-transparent flex items-center justify-between text-xs z-20 transition-all duration-300 ${
+                isControlsVisible ? 'opacity-100 translate-y-0' : 'opacity-0 -translate-y-2 pointer-events-none'
+              }`}
+            >
+              <div className="flex items-center space-x-2">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="font-bold text-slate-100 text-[11px] truncate max-w-[180px] sm:max-w-xs drop-shadow">
+                  {customVideoFileName || 'Video Player Preview (Live Sync)'}
+                </span>
+              </div>
+
+              <div className="flex items-center space-x-2 text-[10px]">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    const modes: Array<'translated' | 'dual' | 'original'> = ['translated', 'dual', 'original'];
+                    const nextIdx = (modes.indexOf(videoConfig.subtitleMode) + 1) % modes.length;
+                    onUpdateVideoConfig({ ...videoConfig, subtitleMode: modes[nextIdx] });
+                  }}
+                  className="px-2 py-0.5 rounded bg-black/60 hover:bg-black/90 border border-white/20 text-emerald-400 font-semibold transition drop-shadow control-interactive"
+                  title="စာတန်းထိုး မုဒ် ပြောင်းမည်"
+                >
+                  CC: {videoConfig.subtitleMode === 'dual' ? 'Dual (နှစ်ဘာသာ)' : videoConfig.subtitleMode === 'translated' ? 'Myanmar Only' : 'English Only'}
+                </button>
+                <span className="px-1.5 py-0.5 rounded bg-black/50 border border-white/10 text-slate-300 font-mono">
+                  {items.length} Subs
+                </span>
+              </div>
+            </div>
+
+            {/* Central Ripple Visual Indicator for Play/Pause/Skip */}
+            {rippleEffect && (
+              <div
+                key={rippleEffect.key}
+                className="absolute inset-0 flex items-center justify-center pointer-events-none z-30 animate-out fade-out zoom-out-95 duration-700"
+              >
+                <div className="w-16 h-16 rounded-full bg-black/70 backdrop-blur-md border border-white/30 text-white flex items-center justify-center shadow-2xl">
+                  {rippleEffect.type === 'play' && <Play className="w-8 h-8 fill-current ml-1 text-emerald-400" />}
+                  {rippleEffect.type === 'pause' && <Pause className="w-8 h-8 fill-current text-amber-400" />}
+                  {rippleEffect.type === 'skip-fwd' && (
+                    <div className="flex flex-col items-center">
+                      <FastForward className="w-6 h-6 text-sky-400" />
+                      <span className="text-[10px] font-bold text-sky-300 font-mono">+5s</span>
+                    </div>
+                  )}
+                  {rippleEffect.type === 'skip-back' && (
+                    <div className="flex flex-col items-center">
+                      <Rewind className="w-6 h-6 text-sky-400" />
+                      <span className="text-[10px] font-bold text-sky-300 font-mono">-5s</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Centered Translucent Circular Play/Pause Button (When paused or hovering) */}
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                togglePlay();
+              }}
+              className={`absolute inset-0 flex items-center justify-center cursor-pointer transition-all duration-300 z-20 ${
+                isPlaying
+                  ? isControlsVisible
+                    ? 'opacity-0 hover:opacity-80'
+                    : 'opacity-0 pointer-events-none'
+                  : 'opacity-90 hover:opacity-100'
+              }`}
+            >
+              <div className="w-14 h-14 rounded-full bg-white/20 hover:bg-white/30 backdrop-blur-md border border-white/30 flex items-center justify-center text-white shadow-2xl transition transform hover:scale-110 active:scale-95">
+                {isPlaying ? (
+                  <Pause className="w-6 h-6 fill-current" />
+                ) : (
+                  <Play className="w-6 h-6 fill-current ml-1" />
+                )}
+              </div>
+            </button>
+
             {/* Subtitle Overlay Rendering on Video */}
             {activeSub && (
               <div
-                className={`absolute left-0 right-0 px-6 py-3 flex flex-col items-center justify-center text-center transition-all ${
+                className={`absolute left-0 right-0 px-6 flex flex-col items-center justify-center text-center transition-all z-20 pointer-events-none ${
                   videoConfig.textPosition === 'bottom'
-                    ? 'bottom-8'
+                    ? isControlsVisible
+                      ? 'bottom-16'
+                      : 'bottom-6'
                     : videoConfig.textPosition === 'top'
-                    ? 'top-8'
+                    ? 'top-12'
                     : 'top-1/2 -translate-y-1/2'
                 }`}
               >
@@ -478,7 +683,7 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
                     backgroundColor: videoConfig.bgColor,
                     fontSize: `${videoConfig.fontSize}px`,
                   }}
-                  className="px-5 py-2.5 rounded-md backdrop-blur-md max-w-2xl leading-relaxed shadow-2xl border border-white/10 transition-all transform scale-100"
+                  className="px-5 py-2 rounded-md backdrop-blur-md max-w-2xl leading-relaxed shadow-2xl border border-white/10 transition-all transform scale-100"
                 >
                   {/* Myanmar Translated Subtitle */}
                   {(videoConfig.subtitleMode === 'translated' ||
@@ -505,13 +710,184 @@ export const VideoPreview: React.FC<VideoPreviewProps> = ({
               </div>
             )}
 
-            {/* Play Overlay Touch/Click Control */}
+            {/* Bottom Floating Cinema Controls (Auto-Hiding) */}
             <div
-              onClick={togglePlay}
-              className="absolute inset-0 flex items-center justify-center bg-black/20 opacity-0 group-hover:opacity-100 transition cursor-pointer"
+              className={`absolute bottom-0 left-0 right-0 z-30 transition-all duration-300 ${
+                isControlsVisible
+                  ? 'opacity-100 translate-y-0'
+                  : 'opacity-0 translate-y-2 pointer-events-none'
+              }`}
+              onClick={(e) => e.stopPropagation()}
             >
-              <div className="w-14 h-14 rounded-full bg-emerald-500/90 text-slate-950 flex items-center justify-center shadow-xl transform scale-95 group-hover:scale-100 transition">
-                {isPlaying ? <Pause className="w-7 h-7" /> : <Play className="w-7 h-7 ml-0.5" />}
+              {/* Interactive Video Progress Scrubber Bar with Subtitle Markers */}
+              <div
+                onClick={handleScrubberClick}
+                onMouseMove={handleScrubberMouseMove}
+                onMouseLeave={() => setHoverScrubMs(null)}
+                className="relative h-2 hover:h-3 bg-black/60 cursor-pointer transition-all group/scrub"
+              >
+                {/* Background track */}
+                <div className="w-full h-full bg-white/20 relative">
+                  {/* Subtitle segment markers on timeline */}
+                  {durationSec > 0 &&
+                    items.slice(0, 100).map((it) => {
+                      const left = Math.min(100, Math.max(0, ((it.startMs / 1000) / durationSec) * 100));
+                      const width = Math.min(100 - left, Math.max(0.4, (((it.endMs - it.startMs) / 1000) / durationSec) * 100));
+                      const isCurrent = activeSub?.id === it.id;
+                      return (
+                        <div
+                          key={it.id}
+                          style={{ left: `${left}%`, width: `${width}%` }}
+                          className={`absolute top-0 bottom-0 pointer-events-none ${
+                            isCurrent
+                              ? 'bg-amber-400/90 z-10'
+                              : it.translatedText
+                              ? 'bg-emerald-400/50'
+                              : 'bg-white/30'
+                          }`}
+                        />
+                      );
+                    })}
+
+                  {/* Active progress */}
+                  <div
+                    style={{
+                      width: `${Math.min(100, Math.max(0, ((currentTimeMs / 1000) / (durationSec || 1)) * 100))}%`,
+                    }}
+                    className="h-full bg-emerald-500 relative z-10"
+                  >
+                    {/* Knob */}
+                    <div className="absolute right-0 top-1/2 -translate-y-1/2 w-3.5 h-3.5 bg-white rounded-full shadow-md scale-0 group-hover/scrub:scale-100 transition-transform" />
+                  </div>
+
+                  {/* Hover Tooltip */}
+                  {hoverScrubMs !== null && (
+                    <div
+                      style={{
+                        left: `${(hoverScrubMs / ((durationSec || 1) * 1000)) * 100}%`,
+                      }}
+                      className="absolute bottom-4 -translate-x-1/2 bg-black/95 text-white font-mono text-[10px] px-2 py-1 rounded shadow-xl border border-white/10 pointer-events-none whitespace-nowrap z-30"
+                    >
+                      <div>{formatSecToTime(hoverScrubMs / 1000)}</div>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Video Control Bar Overlay at Bottom */}
+              <div className="h-10 bg-gradient-to-t from-black/95 via-black/80 to-black/30 px-3 flex items-center justify-between text-white text-xs">
+                {/* Play/Pause & Subtitle Jumps & Volume & Time */}
+                <div className="flex items-center space-x-2">
+                  <button
+                    onClick={jumpToPrevSub}
+                    className="p-1 text-slate-300 hover:text-amber-400 transition"
+                    title="ယခင် စာကြောင်း (Up Arrow)"
+                  >
+                    <Rewind className="w-3.5 h-3.5" />
+                  </button>
+
+                  <button
+                    onClick={() => skipSeconds(-5)}
+                    className="px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[10px] font-mono text-slate-300 transition"
+                    title="5 စက္ကန့် နောက်သို့"
+                  >
+                    -5s
+                  </button>
+
+                  <button
+                    onClick={togglePlay}
+                    className="p-1 hover:text-emerald-400 transition"
+                    title={isPlaying ? 'Pause (Space)' : 'Play (Space)'}
+                  >
+                    {isPlaying ? (
+                      <Pause className="w-4 h-4 fill-current" />
+                    ) : (
+                      <Play className="w-4 h-4 fill-current" />
+                    )}
+                  </button>
+
+                  <button
+                    onClick={() => skipSeconds(5)}
+                    className="px-1.5 py-0.5 rounded bg-white/10 hover:bg-white/20 text-[10px] font-mono text-slate-300 transition"
+                    title="5 စက္ကန့် ရှေ့သို့"
+                  >
+                    +5s
+                  </button>
+
+                  <button
+                    onClick={jumpToNextSub}
+                    className="p-1 text-slate-300 hover:text-amber-400 transition"
+                    title="နောက် စာကြောင်း (Down Arrow)"
+                  >
+                    <FastForward className="w-3.5 h-3.5" />
+                  </button>
+
+                  {/* Volume slider control */}
+                  <div className="flex items-center space-x-1 group/vol">
+                    <button
+                      onClick={toggleMute}
+                      className="p-1 hover:text-emerald-400 transition text-slate-300"
+                      title={isMuted ? 'Unmute' : 'Mute'}
+                    >
+                      {isMuted ? (
+                        <VolumeX className="w-4 h-4 text-rose-400" />
+                      ) : (
+                        <Volume2 className="w-4 h-4" />
+                      )}
+                    </button>
+                    <input
+                      type="range"
+                      min={0}
+                      max={1}
+                      step={0.05}
+                      value={isMuted ? 0 : volume}
+                      onChange={(e) => handleVolumeChange(Number(e.target.value))}
+                      className="w-14 h-1 accent-emerald-500 bg-white/30 rounded cursor-pointer hidden group-hover/vol:inline-block"
+                    />
+                  </div>
+
+                  <span className="font-mono text-[11px] text-slate-200">
+                    <span className="text-emerald-300 font-bold">{formatSecToTime(currentTimeMs / 1000)}</span>
+                    <span className="text-slate-400"> / {formatSecToTime(durationSec)}</span>
+                  </span>
+                </div>
+
+                {/* Right Video Controls: Speed, PiP, Fullscreen */}
+                <div className="flex items-center space-x-1.5 sm:space-x-2">
+                  {/* Playback Speed Selector */}
+                  <div className="flex items-center space-x-1 bg-black/50 px-1.5 py-0.5 rounded border border-white/10 text-[11px]">
+                    <Gauge className="w-3 h-3 text-emerald-400" />
+                    <select
+                      value={playbackSpeed}
+                      onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
+                      className="bg-transparent text-[10px] text-slate-200 focus:outline-none cursor-pointer"
+                      title="Playback Speed"
+                    >
+                      <option value={0.5} className="bg-[#12131d]">0.5x</option>
+                      <option value={0.75} className="bg-[#12131d]">0.75x</option>
+                      <option value={1} className="bg-[#12131d]">1.0x</option>
+                      <option value={1.25} className="bg-[#12131d]">1.25x</option>
+                      <option value={1.5} className="bg-[#12131d]">1.5x</option>
+                      <option value={2} className="bg-[#12131d]">2.0x</option>
+                    </select>
+                  </div>
+
+                  <button
+                    onClick={togglePiP}
+                    className="p-1 hover:text-emerald-400 transition text-slate-300"
+                    title="Picture in Picture (PiP)"
+                  >
+                    <Film className="w-3.5 h-3.5" />
+                  </button>
+
+                  <button
+                    onClick={toggleFullscreen}
+                    className="p-1 hover:text-emerald-400 transition text-slate-300"
+                    title="Fullscreen"
+                  >
+                    <Maximize2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             </div>
           </div>

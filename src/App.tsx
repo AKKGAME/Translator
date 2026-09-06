@@ -463,8 +463,8 @@ export default function App() {
       }
       const isVipOrAdmin =
         userProfile?.role === 'admin' ||
-        userProfile?.isVip ||
-        userProfile?.tier === 'unlimited';
+        userProfile?.tier === 'unlimited' ||
+        planStatus.hasActivePlan;
       if (!isVipOrAdmin && (userProfile?.credits ?? 0) <= 0) {
         setIsUserProfileOpen(true);
         showAlert({
@@ -893,10 +893,12 @@ export default function App() {
         return;
       }
 
-      const isUnlimitedAdmin =
-        userProfile?.role === 'admin' || userProfile?.tier === 'unlimited';
+      const isVipOrAdmin =
+        userProfile?.role === 'admin' ||
+        userProfile?.tier === 'unlimited' ||
+        planStatus.hasActivePlan;
 
-      if (!isUnlimitedAdmin && (userProfile?.credits ?? 0) <= 0) {
+      if (!isVipOrAdmin && (userProfile?.credits ?? 0) <= 0) {
         setIsUserProfileOpen(true);
         showAlert({
           title: 'Translation Credits ကုန်ဆုံးသွားပါပြီ',
@@ -931,8 +933,23 @@ export default function App() {
 
     setTranslationProgress({ current: 0, total: targetItems.length });
 
+    const isVipOrAdminUser =
+      userProfile?.role === 'admin' ||
+      userProfile?.tier === 'unlimited' ||
+      planStatus.hasActivePlan;
+
     for (let i = 0; i < targetItems.length; i += batchSize) {
       if (isCancelledRef.current) break;
+
+      // Check if user ran out of credits mid-batch
+      if (!isUsingCustomKey && !isVipOrAdminUser && (userProfile?.credits ?? 0) <= 0) {
+        showAlert({
+          title: 'Translation Credits ကုန်ဆုံးသွားပါပြီ',
+          message: 'ကျန်ရှိသော စာကြောင်းများကို ဆက်လက်ဘာသာပြန်ရန် Credits ထပ်မံဖြည့်တင်းပါ သို့မဟုတ် Plan ဝယ်ယူပါ',
+          type: 'warning',
+        });
+        break;
+      }
 
       const chunk = targetItems.slice(i, i + batchSize);
 

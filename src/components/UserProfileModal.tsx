@@ -11,7 +11,7 @@ import {
   saveUserCustomKeys,
   UserCustomKeyItem,
 } from '../lib/firebase';
-import { doc, getDoc, updateDoc, increment } from 'firebase/firestore';
+import { doc, getDoc, updateDoc, increment, arrayUnion } from 'firebase/firestore';
 import { testGeminiApiKey } from '../utils/geminiDirect';
 import { showConfirm, notify } from './AlertToastProvider';
 import {
@@ -129,6 +129,11 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
         return;
       }
 
+      if (promoData.redeemedUsers && Array.isArray(promoData.redeemedUsers) && promoData.redeemedUsers.includes(user.uid)) {
+        setRedeemMessage({ type: 'error', text: 'ဤ Promo Code ကို သင် အသုံးပြုပြီးဖြစ်ပါသည်' });
+        return;
+      }
+
       if (promoData.usedCount >= promoData.maxUses) {
         setRedeemMessage({ type: 'error', text: 'ဤ Promo Code ၏ အသုံးပြုနိုင်သည့် အကြိမ်အရေအတွက် ပြည့်သွားပါပြီ' });
         return;
@@ -146,6 +151,7 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
       await updateDoc(userRef, updates);
       await updateDoc(promoRef, {
         usedCount: increment(1),
+        redeemedUsers: arrayUnion(user.uid),
       });
 
       setRedeemMessage({

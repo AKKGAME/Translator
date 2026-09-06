@@ -31,7 +31,11 @@ service cloud.firestore {
     // Promo codes / vouchers
     match /promoCodes/{codeId} {
       allow read: if isSignedIn();
-      allow write: if isAdmin();
+      allow create, delete: if isAdmin();
+      allow update: if isAdmin() || (
+        isSignedIn() &&
+        request.resource.data.diff(resource.data).affectedKeys().hasOnly(['usedCount', 'redeemedUsers'])
+      );
     }
 
     // Usage logs

@@ -85,24 +85,22 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
 }) => {
   const [createMenuOpen, setCreateMenuOpen] = useState(false);
   const createMenuRef = useRef<HTMLDivElement>(null);
-  const [brandClicks, setBrandClicks] = useState(0);
+  const brandClicksRef = useRef(0);
   const brandTimeoutRef = useRef<any>(null);
 
   // Discreet Admin activation via 3 clicks on brand logo
   const handleBrandClick = () => {
-    setBrandClicks((prev) => {
-      const next = prev + 1;
-      if (next >= 3) {
-        if (brandTimeoutRef.current) clearTimeout(brandTimeoutRef.current);
-        onOpenAdmin();
-        return 0;
-      }
-      return next;
-    });
-
+    brandClicksRef.current += 1;
     if (brandTimeoutRef.current) clearTimeout(brandTimeoutRef.current);
+
+    if (brandClicksRef.current >= 3) {
+      brandClicksRef.current = 0;
+      onOpenAdmin();
+      return;
+    }
+
     brandTimeoutRef.current = setTimeout(() => {
-      setBrandClicks(0);
+      brandClicksRef.current = 0;
     }, 1000);
   };
 
@@ -443,20 +441,27 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
                 <span className="font-medium text-slate-200 text-[11px] max-w-[80px] truncate hidden sm:inline">
                   {profile.displayName?.split(' ')[0] || 'User'}
                 </span>
-                <span className={`text-[10px] px-1.5 py-0.2 rounded font-mono font-bold flex items-center space-x-0.5 ${
+                <span className={`text-[10px] px-1.5 py-0.5 rounded font-mono font-bold flex items-center space-x-1 ${
                   profile.role === 'admin' || profile.isVip || profile.tier === 'unlimited'
                     ? 'bg-amber-500/20 text-amber-300 border border-amber-500/30'
                     : 'bg-purple-950/70 text-purple-300 border border-purple-700/50'
                 }`}>
-                  {profile.isVip ? (
+                  {profile.role === 'admin' ? (
                     <>
                       <Crown className="w-2.5 h-2.5 text-amber-400 mr-0.5" />
-                      <span>VIP</span>
+                      <span className="text-amber-200">Admin:</span>
+                      <span>{(profile.credits ?? 0).toLocaleString()}</span>
+                    </>
+                  ) : profile.isVip ? (
+                    <>
+                      <Crown className="w-2.5 h-2.5 text-amber-400 mr-0.5" />
+                      <span className="text-amber-200">VIP:</span>
+                      <span>{(profile.credits ?? 0).toLocaleString()}</span>
                     </>
                   ) : (
                     <>
                       <Coins className="w-2.5 h-2.5 text-purple-300 mr-0.5" />
-                      <span>{profile.credits?.toLocaleString() || 0}</span>
+                      <span>{(profile.credits ?? 0).toLocaleString()}</span>
                     </>
                   )}
                 </span>

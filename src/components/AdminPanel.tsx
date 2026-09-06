@@ -54,6 +54,7 @@ import {
 } from 'lucide-react';
 import { AdminFirebaseUsers } from './AdminFirebaseUsers';
 import { notify, showConfirm, showAlert } from './AlertToastProvider';
+import { AppUserProfile } from '../lib/firebase';
 
 interface SavedFileMeta {
   id: string;
@@ -70,13 +71,26 @@ interface AdminPanelProps {
   onUpdateDonationConfig: (config: DonationConfig) => void;
   currentDonationConfig?: DonationConfig;
   onBackToUserPanel?: () => void;
+  user?: any;
+  profile?: AppUserProfile | null;
+  onGoogleSignIn?: () => Promise<void>;
 }
 
 export const AdminPanel: React.FC<AdminPanelProps> = ({
   onUpdateDonationConfig,
   currentDonationConfig,
   onBackToUserPanel,
+  user,
+  profile,
+  onGoogleSignIn,
 }) => {
+  const isUserAdmin = Boolean(
+    user && (
+      profile?.role === 'admin' ||
+      user?.email === 'aungkyawkhant.apple@gmail.com'
+    )
+  );
+
   const [adminPassword, setAdminPassword] = useState<string>(() => {
     return sessionStorage.getItem('admin_pass') || '';
   });
@@ -1438,6 +1452,63 @@ export const AdminPanel: React.FC<AdminPanelProps> = ({
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(2)} MB`;
   };
+
+  // Render Access Denied if not signed in with an Admin account
+  if (!isUserAdmin) {
+    return (
+      <div className="max-w-md mx-auto py-16 px-4">
+        <div className="bg-[#0e1219] border border-rose-500/30 rounded-xl p-6 sm:p-7 shadow-2xl relative overflow-hidden">
+          <div className="text-center space-y-3 mb-6">
+            <div className="w-12 h-12 rounded-xl bg-rose-500/15 text-rose-400 border border-rose-500/30 flex items-center justify-center mx-auto shadow-inner">
+              <ShieldAlert className="w-6 h-6" />
+            </div>
+            <h2 className="text-lg font-bold text-slate-100">
+              Admin စီမံခန့်ခွဲမှု ခွင့်ပြုချက် လိုအပ်ပါသည်
+            </h2>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              ဤ Admin Panel သို့ ဝင်ရောက်ရန်အတွက် သတ်မှတ်ထားသော စနစ်စီမံခန့်ခွဲသူ (Admin) အကောင့်ဖြင့် ဦးစွာ Login ဝင်ထားရန် လိုအပ်ပါသည်။
+            </p>
+          </div>
+
+          {user ? (
+            <div className="bg-[#121522] border border-[#21263c] rounded-lg p-3.5 mb-5 space-y-1.5">
+              <div className="text-[11px] text-slate-400">လက်ရှိ Login ဝင်ထားသော အကောင့်:</div>
+              <div className="text-xs font-mono font-semibold text-rose-300 truncate">
+                {user.email || 'Anonymous'}
+              </div>
+              <div className="text-[10px] text-amber-400/90 font-medium">
+                ⚠️ ဤအကောင့်သည် Admin Role ခွင့်ပြုချက် မရှိသေးပါ
+              </div>
+            </div>
+          ) : (
+            <div className="mb-5">
+              {onGoogleSignIn && (
+                <button
+                  type="button"
+                  onClick={onGoogleSignIn}
+                  className="w-full bg-indigo-600 hover:bg-indigo-500 text-white font-semibold text-xs py-2.5 rounded-lg shadow transition flex items-center justify-center space-x-2 cursor-pointer"
+                >
+                  <KeyRound className="w-4 h-4" />
+                  <span>Google ဖြင့် Admin အကောင့် ဝင်မည်</span>
+                </button>
+              )}
+            </div>
+          )}
+
+          {onBackToUserPanel && (
+            <button
+              type="button"
+              onClick={onBackToUserPanel}
+              className="w-full py-2.5 bg-[#12161f] hover:bg-[#1a202c] text-slate-300 text-xs font-semibold rounded-lg border border-[#212734] transition flex items-center justify-center space-x-2 cursor-pointer"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              <span>မူလ စာမျက်နှာ (Studio) သို့ ပြန်သွားမည်</span>
+            </button>
+          )}
+        </div>
+      </div>
+    );
+  }
 
   // Render Login Form if not authenticated
   if (!isLoggedIn) {

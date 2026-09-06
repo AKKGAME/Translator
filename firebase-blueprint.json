@@ -46,6 +46,11 @@
         "isVipUpgrade": { "type": "boolean" },
         "maxUses": { "type": "number" },
         "usedCount": { "type": "number" },
+        "redeemedUsers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "UIDs of users who have redeemed this code"
+        },
         "isActive": { "type": "boolean" },
         "createdAt": { "type": "string", "format": "date-time" }
       },

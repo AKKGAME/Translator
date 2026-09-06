@@ -136,7 +136,11 @@ export default function App() {
     };
   }, []);
 
+  const isSigningInRef = useRef(false);
+
   const handleGoogleSignIn = async () => {
+    if (isSigningInRef.current) return;
+    isSigningInRef.current = true;
     try {
       const res = await signInWithPopup(auth, googleProvider);
       if (res.user) {
@@ -144,8 +148,22 @@ export default function App() {
         setUserProfile(profile);
       }
     } catch (err: any) {
-      console.error('Google sign in error:', err);
+      const code = err?.code || '';
+      // Ignore normal user-cancelled popups or duplicate request cancellation
+      if (
+        code === 'auth/popup-closed-by-user' ||
+        code === 'auth/cancelled-popup-request'
+      ) {
+        return;
+      }
+      if (code === 'auth/popup-blocked') {
+        notify.warning('Browser မှ Popup Window ကို ပိတ်ထားပါသည်။ Popups ဖွင့်ပေးပါ', 'Popup Blocked');
+        return;
+      }
+      console.warn('Google sign in error:', err);
       notify.error(err.message || 'Error occurred', 'Google Sign In မအောင်မြင်ပါ');
+    } finally {
+      isSigningInRef.current = false;
     }
   };
 
@@ -164,6 +182,43 @@ export default function App() {
       }));
     }
   }, [userProfile]);
+
+  // Admin access validation
+  const isUserAdmin = Boolean(
+    firebaseUser && (
+      userProfile?.role === 'admin' ||
+      firebaseUser?.email === 'aungkyawkhant.apple@gmail.com'
+    )
+  );
+
+  // Prevent unauthorized access to Admin Panel
+  const handleToggleAdmin = useCallback(() => {
+    if (activeTab === 'admin') {
+      setActiveTab('studio');
+      return;
+    }
+
+    if (!isUserAdmin) {
+      showAlert({
+        title: 'Admin သီးသန့် ကဏ္ဍဖြစ်ပါသည်',
+        message: 'Admin အကောင့်ဖြင့် Login ဝင်ထားမှသာ Admin Panel သို့ ဝင်ရောက်ခွင့်ရှိပါသည်',
+        type: 'warning',
+      });
+      if (!firebaseUser) {
+        setIsUserProfileOpen(true);
+      }
+      return;
+    }
+
+    setActiveTab('admin');
+  }, [activeTab, isUserAdmin, firebaseUser]);
+
+  // If user logs out or role changes while in admin view, auto-redirect to studio
+  useEffect(() => {
+    if (activeTab === 'admin' && !isUserAdmin) {
+      setActiveTab('studio');
+    }
+  }, [activeTab, isUserAdmin]);
 
   // Translation State & Progress
   const [isTranslating, setIsTranslating] = useState(false);
@@ -529,11 +584,18 @@ export default function App() {
       }
 
       if (transResult) {
-        // Deduct 1 credit if using server key
-        if (!isUsingCustomKey && firebaseUser && userProfile) {
-          const isUnlimitedAdmin =
-            userProfile.role === 'admin' || userProfile.tier === 'unlimited';
-          deductUserCredits(firebaseUser.uid, 1, !isUnlimitedAdmin).catch(console.warn);
+        // Deduct 1 credit and track translated lines
+        if (firebaseUser) {
+          setUserProfile((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  credits: Math.max(0, (prev.credits ?? 0) - 1),
+                  totalTranslatedLines: (prev.totalTranslatedLines ?? 0) + 1,
+                }
+              : null
+          );
+          deductUserCredits(firebaseUser.uid, 1, true).catch(console.warn);
         }
 
         setItems((prev) => {
@@ -629,6 +691,9 @@ export default function App() {
       } else if ((e.ctrlKey || e.metaKey) && e.key === 'y') {
         e.preventDefault();
         handleRedo();
+      } else if ((e.ctrlKey || e.metaKey) && e.shiftKey && (e.key === 'a' || e.key === 'A')) {
+        e.preventDefault();
+        handleToggleAdmin();
       }
     };
 
@@ -644,6 +709,7 @@ export default function App() {
     handleRedo,
     handleUpdateItem,
     handleSplitItem,
+    handleToggleAdmin,
   ]);
 
   // Load Subtitle File from User
@@ -1025,12 +1091,19 @@ export default function App() {
           })
         );
 
-        // Deduct credits for this translated batch
-        if (!isUsingCustomKey && firebaseUser && userProfile) {
-          const isUnlimitedAdmin =
-            userProfile.role === 'admin' || userProfile.tier === 'unlimited';
+        // Deduct credits for this translated batch and track translated lines
+        if (firebaseUser) {
+          setUserProfile((prev) =>
+            prev
+              ? {
+                  ...prev,
+                  credits: Math.max(0, (prev.credits ?? 0) - chunk.length),
+                  totalTranslatedLines: (prev.totalTranslatedLines ?? 0) + chunk.length,
+                }
+              : null
+          );
           try {
-            await deductUserCredits(firebaseUser.uid, chunk.length, !isUnlimitedAdmin);
+            await deductUserCredits(firebaseUser.uid, chunk.length, true);
           } catch (e) {
             console.warn('Failed to deduct credits:', e);
           }
@@ -1093,7 +1166,7 @@ export default function App() {
         canRedo={historyIndex < history.length - 1}
         onOpenShortcuts={() => setIsShortcutsOpen(true)}
         onOpenSettings={() => setIsSettingsModalOpen(true)}
-        onOpenAdmin={() => setActiveTab(activeTab === 'admin' ? 'studio' : 'admin')}
+        onOpenAdmin={handleToggleAdmin}
         onOpenDonate={() => setIsDonationModalOpen(true)}
         onOpenOnlineSubtitles={() => setIsOnlineSubtitlesOpen(true)}
         hasSubtitles={items.length > 0}
@@ -1112,6 +1185,9 @@ export default function App() {
               setTranslationSettings((prev) => ({ ...prev, donationConfig: cfg }))
             }
             currentDonationConfig={translationSettings.donationConfig}
+            user={firebaseUser}
+            profile={userProfile}
+            onGoogleSignIn={handleGoogleSignIn}
           />
         </div>
       ) : (
@@ -1235,7 +1311,7 @@ export default function App() {
         user={firebaseUser}
         profile={userProfile}
         onSignIn={handleGoogleSignIn}
-        onOpenAdmin={() => setActiveTab(activeTab === 'admin' ? 'studio' : 'admin')}
+        onOpenAdmin={handleToggleAdmin}
         onUpdateCustomKeys={(updatedKeys) => {
           setTranslationSettings((prev) => ({
             ...prev,
@@ -1250,10 +1326,10 @@ export default function App() {
         isOpen={isOnlineSubtitlesOpen}
         onClose={() => setIsOnlineSubtitlesOpen(false)}
         onImportSubtitle={handleFileLoaded}
-        isAdmin={userProfile?.role === 'admin'}
+        isAdmin={isUserAdmin}
         onOpenAdmin={() => {
           setIsOnlineSubtitlesOpen(false);
-          setActiveTab('admin');
+          handleToggleAdmin();
         }}
       />
     </div>

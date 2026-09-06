@@ -1,10 +1,8 @@
 import React, { useState } from 'react';
 import {
   FirebaseUser,
-  signInWithPopup,
   fbSignOut,
   auth,
-  googleProvider,
   AppUserProfile,
   db,
   checkUserPlanStatus,
@@ -641,9 +639,14 @@ export const UserProfileModal: React.FC<UserProfileModalProps> = ({
                     <span className="text-slate-400 text-[11px] block font-medium">လက်ကျန် စာကြောင်းရေ (Available Credits)</span>
                     <div className="flex items-baseline space-x-2 mt-1">
                       <span className="text-2xl font-black text-amber-300 font-mono">
-                        {profile.role === 'admin' || profile.tier === 'unlimited' ? '∞ အကန့်အသတ်မရှိ' : profile.credits.toLocaleString()}
+                        {(profile.credits ?? 0).toLocaleString()}
                       </span>
                       <span className="text-xs text-slate-400 font-medium">lines</span>
+                      {(profile.role === 'admin' || profile.tier === 'unlimited') && (
+                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/20 text-amber-300 border border-amber-500/30 font-semibold ml-2">
+                          {profile.role === 'admin' ? 'Admin Access' : 'Unlimited Plan'}
+                        </span>
+                      )}
                     </div>
                   </div>
 

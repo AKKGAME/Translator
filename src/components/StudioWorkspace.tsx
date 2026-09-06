@@ -16,11 +16,7 @@ import {
   Trash2,
   GitMerge,
   Timer,
-  Type,
-  Wrench,
-  Sliders,
   Languages,
-  ChevronDown,
   Upload,
   Clock,
   ArrowRightToLine,
@@ -120,8 +116,7 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
   isAnalyzingContext = false,
   contextAnalysisStep = 'idle',
 }) => {
-  const [activeBottomTab, setActiveBottomTab] = useState<'style' | 'utils' | 'options'>('style');
-  const [isDrawerOpen, setIsDrawerOpen] = useState(false);
+  const [isStylePopoverOpen, setIsStylePopoverOpen] = useState(false);
   const [isMuted, setIsMuted] = useState(false);
   const [volume, setVolume] = useState(1);
   const [playbackRate, setPlaybackRate] = useState<number>(1);
@@ -532,11 +527,11 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
               </div>
 
               <button
-                onClick={() => setIsDrawerOpen(!isDrawerOpen)}
+                onClick={() => setIsStylePopoverOpen(!isStylePopoverOpen)}
                 className={`p-1 transition ${
-                  isDrawerOpen ? 'text-purple-400' : 'hover:text-purple-400 text-slate-300'
+                  isStylePopoverOpen ? 'text-purple-400' : 'hover:text-purple-400 text-slate-300'
                 }`}
-                title="Drawer Controls"
+                title="စာတန်းစတိုင် (Subtitle Style)"
               >
                 <Settings className="w-4 h-4" />
               </button>
@@ -550,316 +545,103 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
               </button>
             </div>
           </div>
+
+          {/* Subtitle Style Quick Popover */}
+          {isStylePopoverOpen && (
+            <div
+              className="absolute bottom-11 right-3 z-30 bg-[#12131e]/95 backdrop-blur-md border border-[#2e324a] rounded-lg p-3 shadow-2xl w-64 text-xs text-slate-200 space-y-2.5 animate-in fade-in zoom-in-95 duration-100"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="flex items-center justify-between border-b border-[#23263b] pb-1.5">
+                <span className="font-semibold text-purple-300">စာတန်းစတိုင် (Subtitle Style)</span>
+                <button
+                  onClick={() => setIsStylePopoverOpen(false)}
+                  className="p-0.5 text-slate-400 hover:text-slate-200"
+                >
+                  <X className="w-3.5 h-3.5" />
+                </button>
+              </div>
+
+              {/* Font Size & Position */}
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[11px] text-slate-400 mb-1">Size: {videoConfig.fontSize}px</label>
+                  <input
+                    type="range"
+                    min={14}
+                    max={36}
+                    value={videoConfig.fontSize}
+                    onChange={(e) =>
+                      onUpdateVideoConfig({ ...videoConfig, fontSize: Number(e.target.value) })
+                    }
+                    className="w-full accent-purple-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[11px] text-slate-400 mb-1">Position</label>
+                  <select
+                    value={videoConfig.textPosition}
+                    onChange={(e) =>
+                      onUpdateVideoConfig({
+                        ...videoConfig,
+                        textPosition: e.target.value as 'top' | 'middle' | 'bottom',
+                      })
+                    }
+                    className="w-full bg-[#0d0e17] border border-[#24273c] rounded p-1 text-[11px] text-slate-200"
+                  >
+                    <option value="bottom">Bottom (အောက်)</option>
+                    <option value="middle">Middle (အလယ်)</option>
+                    <option value="top">Top (အပေါ်)</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Colors */}
+              <div className="grid grid-cols-3 gap-1.5 pt-1 border-t border-[#1d1f30]">
+                <div>
+                  <label className="block text-[10px] text-slate-400 mb-0.5">Text</label>
+                  <input
+                    type="color"
+                    value={videoConfig.textColor}
+                    onChange={(e) =>
+                      onUpdateVideoConfig({ ...videoConfig, textColor: e.target.value })
+                    }
+                    className="w-full h-6 rounded bg-transparent cursor-pointer border border-[#24273c]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] text-slate-400 mb-0.5">Highlight</label>
+                  <input
+                    type="color"
+                    value={videoConfig.highlightColor}
+                    onChange={(e) =>
+                      onUpdateVideoConfig({ ...videoConfig, highlightColor: e.target.value })
+                    }
+                    className="w-full h-6 rounded bg-transparent cursor-pointer border border-[#24273c]"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-[10px] text-slate-400 mb-0.5">Box</label>
+                  <input
+                    type="color"
+                    value="#000000"
+                    onChange={(e) =>
+                      onUpdateVideoConfig({
+                        ...videoConfig,
+                        bgColor: `${e.target.value}d9`,
+                      })
+                    }
+                    className="w-full h-6 rounded bg-transparent cursor-pointer border border-[#24273c]"
+                  />
+                </div>
+              </div>
+            </div>
+          )}
         </div>
 
-        {/* Bottom Tab Bar: [Style] [Utils] [Options] */}
-        <div className="bg-[#12131d] border-b border-[#212336] px-3 py-1.5 flex items-center justify-between text-xs">
-          <div className="flex items-center space-x-1">
-            <button
-              onClick={() => {
-                setActiveBottomTab('style');
-                setIsDrawerOpen(true);
-              }}
-              className={`flex items-center space-x-1.5 px-3 py-1 rounded text-xs font-semibold transition ${
-                activeBottomTab === 'style' && isDrawerOpen
-                  ? 'bg-[#6d28d9] text-white shadow-xs'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-[#1a1c2a]'
-              }`}
-            >
-              <Type className="w-3.5 h-3.5" />
-              <span>Style</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setActiveBottomTab('utils');
-                setIsDrawerOpen(true);
-              }}
-              className={`flex items-center space-x-1.5 px-3 py-1 rounded text-xs font-semibold transition ${
-                activeBottomTab === 'utils' && isDrawerOpen
-                  ? 'bg-[#6d28d9] text-white shadow-xs'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-[#1a1c2a]'
-              }`}
-            >
-              <Wrench className="w-3.5 h-3.5" />
-              <span>Utils</span>
-            </button>
-
-            <button
-              onClick={() => {
-                setActiveBottomTab('options');
-                setIsDrawerOpen(true);
-              }}
-              className={`flex items-center space-x-1.5 px-3 py-1 rounded text-xs font-semibold transition ${
-                activeBottomTab === 'options' && isDrawerOpen
-                  ? 'bg-[#6d28d9] text-white shadow-xs'
-                  : 'text-slate-400 hover:text-slate-200 hover:bg-[#1a1c2a]'
-              }`}
-            >
-              <Sliders className="w-3.5 h-3.5" />
-              <span>Options</span>
-            </button>
-          </div>
-
-          <button
-            onClick={() => setIsDrawerOpen(!isDrawerOpen)}
-            className="p-1 text-slate-500 hover:text-slate-300 transition"
-          >
-            <ChevronDown
-              className={`w-4 h-4 transform transition ${isDrawerOpen ? 'rotate-180' : ''}`}
-            />
-          </button>
-        </div>
-
-        {/* Drawer Contents */}
-        {isDrawerOpen && (
-          <div className="bg-[#10111a] border-b border-[#1f2133] p-3 animate-in fade-in duration-150">
-            {activeBottomTab === 'style' && (
-              <div className="space-y-3 text-xs">
-                {/* Font Size & Position */}
-                <div className="grid grid-cols-2 gap-3">
-                  <div>
-                    <label className="block text-slate-400 mb-1">Font Size: {videoConfig.fontSize}px</label>
-                    <input
-                      type="range"
-                      min={14}
-                      max={36}
-                      value={videoConfig.fontSize}
-                      onChange={(e) =>
-                        onUpdateVideoConfig({ ...videoConfig, fontSize: Number(e.target.value) })
-                      }
-                      className="w-full accent-purple-500"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-400 mb-1">Position</label>
-                    <select
-                      value={videoConfig.textPosition}
-                      onChange={(e) =>
-                        onUpdateVideoConfig({
-                          ...videoConfig,
-                          textPosition: e.target.value as 'top' | 'middle' | 'bottom',
-                        })
-                      }
-                      className="w-full bg-[#0d0e17] border border-[#24273c] rounded p-1.5 text-xs text-slate-200"
-                    >
-                      <option value="bottom">Bottom (အောက်)</option>
-                      <option value="middle">Middle (အလယ်)</option>
-                      <option value="top">Top (အပေါ်)</option>
-                    </select>
-                  </div>
-                </div>
-
-                {/* Colors */}
-                <div className="grid grid-cols-3 gap-2 pt-1 border-t border-[#1d1f30]">
-                  <div>
-                    <label className="block text-slate-400 mb-1">Text Color</label>
-                    <input
-                      type="color"
-                      value={videoConfig.textColor}
-                      onChange={(e) =>
-                        onUpdateVideoConfig({ ...videoConfig, textColor: e.target.value })
-                      }
-                      className="w-full h-7 rounded bg-transparent cursor-pointer border border-[#24273c]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-400 mb-1">Highlight</label>
-                    <input
-                      type="color"
-                      value={videoConfig.highlightColor}
-                      onChange={(e) =>
-                        onUpdateVideoConfig({ ...videoConfig, highlightColor: e.target.value })
-                      }
-                      className="w-full h-7 rounded bg-transparent cursor-pointer border border-[#24273c]"
-                    />
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-400 mb-1">Box Color</label>
-                    <input
-                      type="color"
-                      value="#000000"
-                      onChange={(e) =>
-                        onUpdateVideoConfig({
-                          ...videoConfig,
-                          bgColor: `${e.target.value}d9`,
-                        })
-                      }
-                      className="w-full h-7 rounded bg-transparent cursor-pointer border border-[#24273c]"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {activeBottomTab === 'utils' && (
-              <div className="space-y-2 text-xs">
-                <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
-                  <button
-                    onClick={onOpenTimeShift}
-                    className="p-2 bg-[#181926] hover:bg-[#202235] border border-[#25283c] rounded text-left flex items-center space-x-2 text-slate-200 transition"
-                  >
-                    <Clock className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    <span className="truncate">Time Offset ချိန်ညှိ</span>
-                  </button>
-
-                  <label className="p-2 bg-[#181926] hover:bg-[#202235] border border-[#25283c] rounded cursor-pointer flex items-center space-x-2 text-slate-200 transition">
-                    <Upload className="w-3.5 h-3.5 text-purple-400 shrink-0" />
-                    <span className="truncate">ဗီဒီယို တင်မည်</span>
-                    <input
-                      type="file"
-                      accept="video/*"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) onUploadVideo(f);
-                        e.target.value = '';
-                      }}
-                      className="hidden"
-                    />
-                  </label>
-
-                  <label className="p-2 bg-[#181926] hover:bg-[#202235] border border-[#25283c] rounded cursor-pointer flex items-center space-x-2 text-slate-200 transition">
-                    <FileUp className="w-3.5 h-3.5 text-sky-400 shrink-0" />
-                    <span className="truncate">စာတန်းဖိုင် တင်မည်</span>
-                    <input
-                      type="file"
-                      accept=".srt,.vtt,.txt"
-                      onChange={(e) => {
-                        const f = e.target.files?.[0];
-                        if (f) onUploadSubtitle?.(f);
-                        e.target.value = '';
-                      }}
-                      className="hidden"
-                    />
-                  </label>
-
-                  {onOpenOnlineSubtitles && (
-                    <button
-                      onClick={onOpenOnlineSubtitles}
-                      className="p-2 bg-[#181926] hover:bg-[#202235] border border-emerald-500/30 rounded text-left flex items-center space-x-2 text-emerald-300 hover:text-emerald-200 transition"
-                      title="အွန်လိုင်းမှ စာတန်းထိုး ရှာဖွေတင်သွင်းရန်"
-                    >
-                      <Globe className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                      <span className="truncate">အွန်လိုင်းမှ ရှာမည်</span>
-                    </button>
-                  )}
-
-                  <button
-                    onClick={onReindexItems}
-                    className="p-2 bg-[#181926] hover:bg-[#202235] border border-[#25283c] rounded text-left flex items-center space-x-2 text-slate-200 transition"
-                    title="စာတန်းနံပါတ်များ ၁ မှစ၍ အစဉ်လိုက် ပြန်တပ်မည်"
-                  >
-                    <ListOrdered className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    <span className="truncate">နံပါတ် ပြန်စီမည်</span>
-                  </button>
-
-                  <button
-                    onClick={onStripTags}
-                    className="p-2 bg-[#181926] hover:bg-[#202235] border border-[#25283c] rounded text-left flex items-center space-x-2 text-slate-200 transition"
-                    title="HTML formatting tags (<i/b/font>) များကို ရှင်းထုတ်မည်"
-                  >
-                    <Code2 className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                    <span className="truncate">Tags ရှင်းမည်</span>
-                  </button>
-
-                  <button
-                    onClick={async () => {
-                      const confirmed = await showConfirm({
-                        title: 'ဘာသာပြန်များ ရှင်းလင်းရန်',
-                        message: 'ဘာသာပြန်ဆိုထားသော စာကြောင်းများအားလုံးကို ရှင်းလင်းရန် သေချာပါသလား?',
-                        confirmText: 'ရှင်းလင်းမည်',
-                        type: 'warning',
-                      });
-                      if (confirmed) {
-                        onClearTranslations?.();
-                        notify.info('ဘာသာပြန်ဆိုထားသော စာကြောင်းများကို ရှင်းလင်းပြီးပါပြီ');
-                      }
-                    }}
-                    className="p-2 bg-[#181926] hover:bg-[#202235] border border-[#25283c] rounded text-left flex items-center space-x-2 text-slate-200 transition hover:text-amber-300"
-                    title="မြန်မာဘာသာပြန်များကိုသာ ရှင်းထုတ်မည်"
-                  >
-                    <RotateCcw className="w-3.5 h-3.5 text-amber-400 shrink-0" />
-                    <span className="truncate">ဘာသာပြန် ရှင်းမည်</span>
-                  </button>
-
-                  <button
-                    onClick={async () => {
-                      const confirmed = await showConfirm({
-                        title: 'စာတန်းအားလုံး ဖျက်မည်',
-                        message: 'စာတန်းထိုးအားလုံးကို ဖျက်ပစ်ပြီး အသစ်စတင်ရန် သေချာပါသလား?',
-                        confirmText: 'အကုန်ဖျက်မည်',
-                        type: 'danger',
-                      });
-                      if (confirmed) {
-                        onClearAllItems?.();
-                        notify.info('စာတန်းထိုးအားလုံးကို ရှင်းလင်းပြီးပါပြီ');
-                      }
-                    }}
-                    className="p-2 bg-[#181926] hover:bg-[#202235] border border-[#25283c] rounded text-left flex items-center space-x-2 text-slate-200 transition hover:text-rose-300"
-                    title="စာတန်းအားလုံး ရှင်းထုတ်မည်"
-                  >
-                    <Trash2 className="w-3.5 h-3.5 text-rose-400 shrink-0" />
-                    <span className="truncate">စာတန်းအားလုံး ဖျက်မည်</span>
-                  </button>
-
-                  <button
-                    onClick={() => onAddItem()}
-                    className="p-2 bg-[#181926] hover:bg-[#202235] border border-[#25283c] rounded text-left flex items-center space-x-2 text-slate-200 transition hover:text-emerald-300"
-                    title="စာတန်းအသစ်တစ်ခု ထည့်မည်"
-                  >
-                    <Plus className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
-                    <span className="truncate">စာတန်းအသစ် ထည့်မည်</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {activeBottomTab === 'options' && (
-              <div className="space-y-3 text-xs">
-                <div className="grid grid-cols-2 gap-2">
-                  <div>
-                    <label className="block text-slate-400 mb-1">Translation Style</label>
-                    <select
-                      value={translationSettings.style}
-                      onChange={(e) =>
-                        onUpdateTranslationSettings({
-                          ...translationSettings,
-                          style: e.target.value as any,
-                        })
-                      }
-                      className="w-full bg-[#0d0e17] border border-[#24273c] rounded p-1.5 text-xs text-slate-200"
-                    >
-                      <option value="conversational">သဘာဝကျ စကားပြော (Natural)</option>
-                      <option value="dramatic">ဇာတ်ကောင် စိတ်ခံစားမှု (Anime)</option>
-                      <option value="formal">ရုံးသုံး/ယဉ်ကျေး (Formal)</option>
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="block text-slate-400 mb-1">Batch Size</label>
-                    <select
-                      value={translationSettings.batchSize}
-                      onChange={(e) =>
-                        onUpdateTranslationSettings({
-                          ...translationSettings,
-                          batchSize: Number(e.target.value),
-                        })
-                      }
-                      className="w-full bg-[#0d0e17] border border-[#24273c] rounded p-1.5 text-xs text-slate-200"
-                    >
-                      <option value={15}>15 ကြောင်းစီ</option>
-                      <option value={25}>25 ကြောင်းစီ (Standard)</option>
-                      <option value={40}>40 ကြောင်းစီ (Fast)</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-        )}
       </div>
 
       {/* RIGHT COLUMN: Subtitle Editor Table */}
@@ -923,6 +705,16 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
             >
               <Replace className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">Find & Replace</span>
+            </button>
+
+            {/* Time Offset Button */}
+            <button
+              onClick={onOpenTimeShift}
+              className="px-2 py-0.5 rounded text-[11px] font-medium flex items-center space-x-1 text-slate-400 hover:text-slate-200 hover:bg-[#1a1c2a] transition"
+              title="စာတန်းထိုး အချိန် ရှေ့တိုး/နောက်ဆုတ်ရန် (Time Offset)"
+            >
+              <Clock className="w-3.5 h-3.5 text-amber-400" />
+              <span className="hidden sm:inline">Time Offset</span>
             </button>
 
             <label className="flex items-center space-x-1 cursor-pointer">

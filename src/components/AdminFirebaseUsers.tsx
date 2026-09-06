@@ -395,7 +395,7 @@ export const AdminFirebaseUsers: React.FC = () => {
                           <td className="p-3">
                             <div className="flex items-baseline space-x-1">
                               <span className="font-mono font-bold text-sm text-amber-300">
-                                {u.role === 'admin' ? '∞' : (u.credits || 0).toLocaleString()}
+                                {(u.credits ?? 0).toLocaleString()}
                               </span>
                               <span className="text-[10px] text-slate-400">lines</span>
                             </div>

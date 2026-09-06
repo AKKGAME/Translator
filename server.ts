@@ -66,19 +66,17 @@ try {
 const SAVED_SUBS_DIR = path.join(TMP_DATA_DIR, 'saved_subtitles');
 const SUB_CACHE_DIR = path.join(TMP_DATA_DIR, 'sub_cache');
 
-// Helper to resolve read path: checks /tmp first (for runtime changes), then repo data dir
+// Helper to resolve read path: checks runtime data dir first, then repo data dir
 function getConfigFileReadPath(filename: string): string {
-  if (IS_SERVERLESS) {
-    const tmpPath = path.join(TMP_DATA_DIR, filename);
-    if (fs.existsSync(tmpPath)) {
-      return tmpPath;
-    }
+  const tmpPath = path.join(TMP_DATA_DIR, filename);
+  if (fs.existsSync(tmpPath)) {
+    return tmpPath;
   }
   const repoPath = path.join(REPO_DATA_DIR, filename);
   if (fs.existsSync(repoPath)) {
     return repoPath;
   }
-  return path.join(TMP_DATA_DIR, filename);
+  return tmpPath;
 }
 
 function getConfigFileWritePath(filename: string): string {
@@ -391,8 +389,21 @@ function getSavedSubsManifest(): any[] {
 function saveSubsManifest(manifest: any[]) {
   inMemoryManifest = manifest;
   try {
+    const dataStr = JSON.stringify(manifest, null, 2);
     const filePath = getConfigFileWritePath('saved_subtitles_manifest.json');
-    fs.writeFileSync(filePath, JSON.stringify(manifest, null, 2), 'utf-8');
+    const dir = path.dirname(filePath);
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
+    fs.writeFileSync(filePath, dataStr, 'utf-8');
+
+    // Also persist to repo data directory if available
+    try {
+      const repoPath = path.join(REPO_DATA_DIR, 'saved_subtitles_manifest.json');
+      if (repoPath !== filePath && fs.existsSync(REPO_DATA_DIR)) {
+        fs.writeFileSync(repoPath, dataStr, 'utf-8');
+      }
+    } catch {}
   } catch (err) {
     console.warn('Could not write manifest to disk:', err);
   }
@@ -1378,6 +1389,11 @@ app.post('/api/save-subtitle-file', async (req, res) => {
     const diskFileName = `${id}_${safeBaseName}`;
     const filePath = path.join(SAVED_SUBS_DIR, diskFileName);
 
+    // Ensure storage directory exists
+    if (!fs.existsSync(SAVED_SUBS_DIR)) {
+      fs.mkdirSync(SAVED_SUBS_DIR, { recursive: true });
+    }
+
     // Save actual text file content (with UTF-8)
     fs.writeFileSync(filePath, content, 'utf-8');
 
@@ -1444,11 +1460,38 @@ app.post('/api/save-subtitle-file', async (req, res) => {
       }
     }
 
-    res.json({ success: true, file: itemMeta, telegramSent, telegramError });
+    const downloadUrl = `/api/download-saved-sub/${id}`;
+    res.json({ success: true, file: itemMeta, downloadUrl, telegramSent, telegramError });
   } catch (error: any) {
     console.error('Error saving subtitle file on server:', error);
     res.status(500).json({ error: 'Failed to save subtitle file on server' });
   }
+});
+
+// Public Subtitle File Direct Download API (Open to users without admin auth)
+app.get(['/api/download-saved-sub/:id', '/api/download-subtitle/:id'], (req, res) => {
+  const { id } = req.params;
+  const manifest = getSavedSubsManifest();
+  const fileMeta = manifest.find((f: any) => f.id === id);
+
+  if (!fileMeta) {
+    return res.status(404).json({ error: 'Saved file not found' });
+  }
+
+  const filePath = path.join(SAVED_SUBS_DIR, fileMeta.diskFileName);
+  if (!fs.existsSync(filePath)) {
+    return res.status(404).json({ error: 'File missing from server storage' });
+  }
+
+  if (req.query.view === 'text') {
+    const textContent = fs.readFileSync(filePath, 'utf-8');
+    return res.json({ meta: fileMeta, content: textContent });
+  }
+
+  const safeFileName = fileMeta.fileName || `subtitles_${fileMeta.id}.${fileMeta.format || 'srt'}`;
+  res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+  res.setHeader('Content-Disposition', `attachment; filename="${encodeURIComponent(safeFileName)}"`);
+  fs.createReadStream(filePath).pipe(res);
 });
 
 // Admin Saved Subtitles Management APIs
@@ -2012,13 +2055,7 @@ app.post('/api/verify-gemini-key', async (req, res) => {
     }
 
     const ai = new GoogleGenAI({ apiKey: keyToTest.trim() });
-    const testModels = [
-      'gemini-2.5-flash',
-      'gemini-3.7-flash',
-      'gemini-3.6-flash',
-      'gemini-flash-latest',
-      'gemini-3.1-flash-lite',
-    ];
+    const testModels = ['gemini-2.5-flash', 'gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-flash'];
 
     let verifiedModel = '';
     let lastErr: any = null;
@@ -2055,6 +2092,192 @@ app.post('/api/verify-gemini-key', async (req, res) => {
     return res.status(400).json({ valid: false, error: errMsg });
   }
 });
+
+// Supported Google Gemini models in priority fallback order
+const GEMINI_SUPPORTED_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.5-pro',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
+];
+
+/**
+ * Sanitize raw Gemini SDK errors into user-friendly Burmese messages and classification flags
+ */
+function sanitizeGeminiError(err: any): { isRateLimit: boolean; isKeyInvalid: boolean; friendlyMessage: string } {
+  const errMsg = err?.message || (typeof err === 'string' ? err : '');
+  const isRateLimit =
+    err?.status === 'RESOURCE_EXHAUSTED' ||
+    err?.code === 429 ||
+    errMsg.includes('429') ||
+    errMsg.includes('quota') ||
+    errMsg.includes('RESOURCE_EXHAUSTED');
+
+  const isKeyInvalid =
+    errMsg.includes('API_KEY_INVALID') ||
+    errMsg.includes('API key not valid') ||
+    (errMsg.includes('INVALID_ARGUMENT') && errMsg.includes('API key'));
+
+  let friendlyMessage = 'ဘာသာပြန်ခြင်း မအောင်မြင်ပါ။ ခေတ္တစောင့်ပြီး ပြန်လည်ကြိုးစားပါ';
+  if (isKeyInvalid) {
+    friendlyMessage = 'ထည့်သွင်းထားသော Gemini API Key မမှန်ကန်ပါ။ ကျေးဇူးပြု၍ Google AI Studio မှ Key အသစ် ရယူစစ်ဆေးပေးပါ';
+  } else if (isRateLimit) {
+    friendlyMessage = 'Gemini API အသုံးပြုမှု ပမာဏ (Quota / Rate Limit) ပြည့်နေပါသည်။ ခေတ္တစောင့်ဆိုင်းပါ သို့မဟုတ် Key အသစ် ထည့်သွင်းပါ';
+  } else if (errMsg.includes('ENOTFOUND') || errMsg.includes('fetch failed')) {
+    friendlyMessage = 'Google API ဆာဗာ ချိတ်ဆက်မှု ပြတ်တောက်နေပါသည် (Network / Service Unavailable)';
+  } else if (err?.message && typeof err.message === 'string' && !err.message.startsWith('{')) {
+    friendlyMessage = err.message;
+  }
+
+  return { isRateLimit, isKeyInvalid, friendlyMessage };
+}
+
+/**
+ * Construct master-level system instruction prompt for cinematic Myanmar subtitling
+ */
+function buildTranslationSystemPrompt(settings: any): string {
+  const style = settings?.style || 'conversational';
+  const tone = settings?.tone || 'neutral';
+  const glossary = settings?.glossary || [];
+  const preserveTags = settings?.preserveTags !== false;
+  const useBurmeseDigits = Boolean(settings?.useBurmeseDigits);
+  const speakerNameHandling = settings?.speakerNameHandling || 'omit';
+  const properNounsMode = settings?.properNounsMode || 'myanmar_phonetic';
+  const soundEffectsHandling = settings?.soundEffectsHandling || 'remove';
+  const honorificStyle = settings?.honorificStyle || 'polite';
+  const conciseness = settings?.conciseness || 'concise';
+  const customPromptNote = settings?.customPromptNote || '';
+
+  let styleInstruction = '';
+  if (style === 'conversational') {
+    styleInstruction = '1. CINEMATIC DIALOGUE (ရုပ်ရှင်/ဒရာမာ စကားပြောဟန်): Translate into natural, fluent spoken Myanmar as spoken by real actors in movies and series. Strictly avoid stiff written particles ("သည်", "ပါသည်", "ကျွန်ုပ်"). Use natural spoken rhythm.';
+  } else if (style === 'anime') {
+    styleInstruction = '1. ANIME & ASIAN DRAMA (အနိမေနှင့် အာရှဒရာမာ): Reflect high emotional fidelity, dramatic expressions, and youthful character personalities. Make exclamations, shock, humor, and tender moments vibrant and true to anime subtitling conventions.';
+  } else if (style === 'casual') {
+    styleInstruction = '1. CASUAL VLOG & DAILY LIFE (ပေါ့ပေါ့ပါးပါး စတိုင်): Translate using relaxed, friendly everyday spoken Burmese suitable for YouTube vlogs, gaming, podcasts, and comedy videos.';
+  } else if (style === 'documentary') {
+    styleInstruction = '1. DOCUMENTARY & EDUCATIONAL (သတင်းနှင့် မှတ်တမ်းတင်): Use clear, accurate, professional, and informative phrasing with precise factual terminology for science, history, and nature documentaries.';
+  } else if (style === 'literary') {
+    styleInstruction = '1. FORMAL LITERATURE (စာပေဟန်): Use refined, poetic, and classic formal Burmese suitable for historical period dramas, poetry, and classical literature.';
+  }
+
+  let toneInstruction = '';
+  if (tone === 'polite') {
+    toneInstruction = '2. TONE: Polite and respectful speech endings (ပါ, ခင်ဗျာ, ရှင်, ပါတယ်).';
+  } else if (tone === 'dramatic') {
+    toneInstruction = '2. TONE: Cinematic tension, emotional punch, and dramatic expressions.';
+  } else {
+    toneInstruction = '2. TONE: Natural balanced spoken dialogue tone.';
+  }
+
+  let speakerInstruction = '';
+  if (speakerNameHandling === 'omit') {
+    speakerInstruction = '3. SPEAKER NAMES: STRICTLY OMIT AND REMOVE all speaker names, character tags, and labels in parentheses/brackets or before colons (e.g. "[JOHN]: Hello" -> "မင်္ဂလာပါ", "ANNOUNCER: Welcome" -> "ကြိုဆိုပါတယ်", "(MARY) Good morning" -> "မင်္ဂလာနံနက်ခင်းပါ"). Output ONLY the spoken dialogue line without any speaker prefix.';
+  } else if (speakerNameHandling === 'keep_english') {
+    speakerInstruction = '3. SPEAKER NAMES: Keep speaker names and prefixes in original English letters (e.g. "JOHN: မင်္ဂလာပါ", "NARRATOR: ...").';
+  } else if (speakerNameHandling === 'transliterate') {
+    speakerInstruction = '3. SPEAKER NAMES: Transliterate speaker names to Myanmar phonetics (e.g. "JOHN: Hello" -> "ဂျွန်: မင်္ဂလာပါ").';
+  } else if (speakerNameHandling === 'translate_context') {
+    speakerInstruction = '3. SPEAKER NAMES: Translate speaker titles and roles into natural Myanmar context (e.g. "CAPTAIN:" -> "ကပ္ပတိန်:", "DOCTOR:" -> "ဒေါက်တာ:").';
+  }
+
+  let properNounsInstruction = '';
+  if (properNounsMode === 'keep_english') {
+    properNounsInstruction = '4. PROPER NOUNS: Keep character names, place names, and brands in original English alphabet (e.g. John, Harry Potter, Tokyo).';
+  } else {
+    properNounsInstruction = '4. PROPER NOUNS: Transliterate character names and place names into natural Myanmar phonetic script (e.g. John -> ဂျွန်, Harry Potter -> ဟယ်ရီပေါ်တာ, Tokyo -> တိုကျို).';
+  }
+
+  let soundInstruction = '';
+  if (soundEffectsHandling === 'remove') {
+    soundInstruction = '5. SOUND NOISE: STRICTLY REMOVE all non-verbal audio noise descriptions (e.g. [Music], (pant), (sighs), [cheering], [groans], "ဟောဟဲ"). If a line consists entirely of sound effects, return an empty string "" for "translatedText".';
+  } else if (soundEffectsHandling === 'translate') {
+    soundInstruction = '5. SOUND NOISE: Translate non-verbal audio sound cues in brackets into Myanmar (e.g. [Music] -> [တေးဂီတ], [Laughter] -> [ရယ်မောသံ]).';
+  } else {
+    soundInstruction = '5. SOUND NOISE: Retain original sound tags in brackets as-is.';
+  }
+
+  let honorificInstruction = '';
+  if (honorificStyle === 'polite') {
+    honorificInstruction = '6. PRONOUNS: Polite & respectful pronouns (ကျွန်တော်/ကျွန်မ/မင်း/ခင်ဗျား/ရှင်).';
+  } else if (honorificStyle === 'intimate') {
+    honorificInstruction = '6. PRONOUNS: Intimate & peer pronouns for friends/rivals (ငါ/မင်း/နင်/သူ/ကွာ/ဟ).';
+  } else {
+    honorificInstruction = '6. PRONOUNS: Neutral objective pronouns.';
+  }
+
+  const concisenessInstruction = conciseness === 'concise'
+    ? '7. CONCISENESS: Keep subtitle lines crisp, punchy, and quick to read on screen (avoid long-winded sentences).'
+    : '7. CONCISENESS: Comprehensive translation preserving full detail.';
+
+  const digitsInstruction = useBurmeseDigits
+    ? '8. NUMBERS: Convert Western numerals (0-9) to Myanmar digits (၀-၉).'
+    : '8. NUMBERS: Keep Western digits (0-9) clean for fast readability.';
+
+  // Story & Dialogue Comprehension Context (Pre-read story knowledge)
+  const storyContext = settings?.storyContext;
+  let storyContextInstruction = '';
+  if (storyContext && typeof storyContext === 'object') {
+    const summary = storyContext.summary || '';
+    const settingTone = storyContext.settingAndTone || '';
+    const notes = storyContext.subtitlingNotes || '';
+    const chars = Array.isArray(storyContext.characters)
+      ? storyContext.characters
+          .map((c: any) => `- ${c.name || 'Character'}${c.roleOrGender ? ` (${c.roleOrGender})` : ''}: Use Myanmar pronoun/honorific "${c.myanmarPronoun || 'natural'}" [Relationship: ${c.relationshipWithOthers || 'N/A'}]`)
+          .join('\n')
+      : '';
+    const terms = Array.isArray(storyContext.keyTerminology)
+      ? storyContext.keyTerminology
+          .map((k: any) => `- "${k.term}" -> "${k.suggestedTranslation}"`)
+          .join('\n')
+      : '';
+
+    storyContextInstruction = `
+PRE-ANALYZED STORY COMPREHENSION & PRONOUN RULES (STRICTLY MANDATORY):
+The entire script dialogue has been pre-read and comprehended to eliminate all context and pronoun errors:
+- Plot Overview: ${summary}
+- Setting & Tone: ${settingTone}
+- Character Pronoun & Role Continuity:
+${chars}
+- Subtitling Directives: ${notes}
+${terms ? `- Story Terminology Rules:\n${terms}` : ''}
+CRITICAL MANDATE: Adhere strictly to the established character relationships and pronouns (ငါ/မင်း, ကျွန်တော်/မင်း, ရှင်/ကျွန်တော်, အစ်ကို/ညီ etc.). Do NOT randomly flip pronouns across subtitle lines!
+`;
+  }
+
+  let glossaryPrompt = '';
+  if (glossary.length > 0) {
+    glossaryPrompt = `
+Glossary & Term Rules (MANDATORY):
+${glossary.map((g: any) => `- "${g.original}" -> "${g.target}"`).join('\n')}
+`;
+  }
+
+  return `
+You are a master professional film & video subtitle translator specializing in English to natural spoken Myanmar (Burmese / မြန်မာဘာသာ) translation for cinema, TV shows, and video subtitles.
+
+CRITICAL NATURAL TRANSLATION PRINCIPLES:
+1. NATURAL SPOKEN MYANMAR: Translate into fluent, natural spoken Myanmar (မြန်မာစကားပြော) as used in professional movie subtitling. Strictly avoid stiff, robotic bookish particles like "သည်", "ပါသည်", "ကျွန်ုပ်" in dialogue lines.
+2. IDIOMS & COLLOQUIALISMS: Translate English idioms, slang, and phrasal verbs by their natural Myanmar meaning, not literal words (e.g. "piece of cake" -> "လွယ်လွယ်လေးပါ", "cut it out" -> "တော်လိုက်တော့", "on it" -> "ငါကြည့်လုပ်လိုက်မယ်", "what's up" -> "ဘာထူးလဲ").
+3. CONTEXT & DIALOGUE FLOW: Ensure pronoun references and tone remain continuous across dialogue lines.
+4. LINE BREAK PRESERVATION: If an input subtitle text contains line breaks (\\n), maintain the multi-line subtitle layout in the translated output so it renders cleanly on screen.
+5. SUBTITLE PUNCTUATION: Avoid trailing formal Burmese full stops (။) at the end of spoken dialogue subtitle lines to keep screen subtitles clean. Preserve trailing ellipsis (...) or question marks (?).
+${styleInstruction}
+${toneInstruction}
+${speakerInstruction}
+${properNounsInstruction}
+${soundInstruction}
+${honorificInstruction}
+${concisenessInstruction}
+${digitsInstruction}
+${preserveTags ? '9. Preserve formatting HTML tags like <i>, </i>, <b>, </b>, <font> exactly around translated text without breaking tags.' : '9. Strip HTML formatting tags if unnecessary.'}
+10. Return a JSON object containing a "translations" array. Each array element MUST be an object with "id" (number matching input item id) and "translatedText" (string).
+11. Do NOT combine, merge, or skip any item IDs. Return an entry for EVERY input item provided in the request payload.
+${storyContextInstruction}
+${glossaryPrompt}
+${customPromptNote ? `Additional User Guidelines: ${customPromptNote}` : ''}
+`;
+}
 
 // Batch Translate Subtitles API Endpoint
 app.post('/api/translate-subtitles', async (req, res) => {
@@ -2093,147 +2316,7 @@ app.post('/api/translate-subtitles', async (req, res) => {
       effectiveApiKey = (usageConfig.adminDefaultGeminiKey && usageConfig.adminDefaultGeminiKey.trim()) || process.env.GEMINI_API_KEY || '';
     }
 
-    const style = settings?.style || 'conversational';
-    const tone = settings?.tone || 'neutral';
-    const glossary = settings?.glossary || [];
-    const preserveTags = settings?.preserveTags !== false;
-    const useBurmeseDigits = Boolean(settings?.useBurmeseDigits);
-    const speakerNameHandling = settings?.speakerNameHandling || 'keep_english';
-    const properNounsMode = settings?.properNounsMode || 'myanmar_phonetic';
-    const soundEffectsHandling = settings?.soundEffectsHandling || 'translate';
-    const honorificStyle = settings?.honorificStyle || 'polite';
-    const conciseness = settings?.conciseness || 'concise';
-    const customPromptNote = settings?.customPromptNote || '';
-
-    let glossaryPrompt = '';
-    if (glossary.length > 0) {
-      glossaryPrompt = `
-Glossary & Term Rules (MANDATORY):
-${glossary.map((g: any) => `- "${g.original}" -> "${g.target}"`).join('\n')}
-`;
-    }
-
-    let styleInstruction = '';
-    if (style === 'conversational') {
-      styleInstruction = 'Translate using natural, fluent spoken Burmese (စကားပြောစတိုင်) suitable for video subtitles and movie dialogues.';
-    } else if (style === 'literary') {
-      styleInstruction = 'Translate using formal, elegant written Burmese (စာတွေ့စတိုင်) suitable for documentaries, news, and academic tutorials.';
-    } else if (style === 'casual') {
-      styleInstruction = 'Translate using casual, friendly spoken Burmese (ပေါ့ပေါ့ပါးပါး စတိုင်) suitable for vlogs, comedy, and gaming videos.';
-    }
-
-    let toneInstruction = '';
-    if (tone === 'polite') {
-      toneInstruction = 'Use polite and respectful Myanmar honorifics and speech endings (e.g., ပါသည်, ပါတယ်, ခင်ဗျာ, ရှင်).';
-    } else if (tone === 'dramatic') {
-      toneInstruction = 'Emphasize dramatic emotion and cinematic expression suitable for action and drama films.';
-    }
-
-    // Speaker Name Rule
-    let speakerInstruction = '';
-    if (speakerNameHandling === 'omit') {
-      speakerInstruction = 'STRICTLY OMIT and REMOVE all speaker names, character labels, or speaker prefixes in parentheses/brackets or before colons (e.g., "(JUICE) Oh dear!" -> "ဒုက္ခပဲ!", "(ဂျူအိ) ဒုက္ခပဲ!" -> "ဒုက္ခပဲ!", "JOHN: Hello" -> "မင်္ဂလာပါ"). Output ONLY the clean spoken dialogue line without any character name or speaker tag.';
-    } else if (speakerNameHandling === 'keep_english') {
-      speakerInstruction = 'Keep speaker names and prefixes in original English letters (e.g. "JOHN:" stays "JOHN:", "ANNOUNCER:" stays "ANNOUNCER:").';
-    } else if (speakerNameHandling === 'transliterate') {
-      speakerInstruction = 'Transliterate speaker names to Myanmar phonetics (e.g. "JOHN:" -> "ဂျွန်:", "MARY:" -> "မာရီ:").';
-    } else if (speakerNameHandling === 'translate_context') {
-      speakerInstruction = 'Translate speaker titles and labels into natural Myanmar context (e.g. "CAPTAIN:" -> "ကပ္ပတိန်:", "DOCTOR:" -> "ဒေါက်တာ:").';
-    }
-
-    // Proper Nouns Rule
-    let properNounsInstruction = '';
-    if (properNounsMode === 'keep_english') {
-      properNounsInstruction = 'Keep English character names and place names in English script (e.g. John, London, New York).';
-    } else {
-      properNounsInstruction = 'Transliterate English character names and place names into natural Myanmar phonetic script (e.g. John -> ဂျွန်, London -> လန်ဒန်).';
-    }
-
-    // Sound Effects Rule
-    let soundInstruction = '';
-    if (soundEffectsHandling === 'translate') {
-      soundInstruction = 'Translate non-verbal sound descriptions in brackets or parentheses into Myanmar (e.g., [Music] -> [တေးဂီတ], [Laughter] -> [ရယ်မောသံ], (sighs) -> (သက်ပြင်းချသံ)).';
-    } else if (soundEffectsHandling === 'keep') {
-      soundInstruction = 'Keep non-verbal audio descriptions in brackets in original English (e.g., [Music], [Laughter]).';
-    } else if (soundEffectsHandling === 'remove') {
-      soundInstruction = 'Omit non-verbal sound descriptions in brackets like [Music] or [Laughter] completely.';
-    }
-
-    // Honorifics Rule
-    let honorificInstruction = '';
-    if (honorificStyle === 'polite') {
-      honorificInstruction = 'Use polite, respectful pronouns and endings (e.g., မင်း/ကျွန်တော်/ခင်ဗျား/ရှင်/ပါသည်).';
-    } else if (honorificStyle === 'intimate') {
-      honorificInstruction = 'Use intimate or cinematic movie-dialogue pronouns (e.g., နင်/ငါ/မင်း/ကွာ).';
-    } else {
-      honorificInstruction = 'Use neutral objective pronouns (e.g., သူ/မိမိ).';
-    }
-
-    // Conciseness Rule
-    const concisenessInstruction = conciseness === 'concise'
-      ? 'Keep subtitle lines short, punchy, and easy to read quickly on screen.'
-      : 'Provide full, comprehensive translation preserving all details.';
-
-    const digitsInstruction = useBurmeseDigits
-      ? 'Convert Western numerals (0-9) in translated text to Myanmar digits (၀-၉).'
-      : 'Keep numbers as standard digits unless natural language numbers sound better.';
-
-    // Story & Dialogue Comprehension Context (Pre-read story knowledge)
-    const storyContext = settings?.storyContext;
-    let storyContextInstruction = '';
-    if (storyContext && typeof storyContext === 'object') {
-      const summary = storyContext.summary || '';
-      const settingTone = storyContext.settingAndTone || '';
-      const notes = storyContext.subtitlingNotes || '';
-      const chars = Array.isArray(storyContext.characters)
-        ? storyContext.characters
-            .map((c: any) => `- ${c.name || 'Character'}${c.roleOrGender ? ` (${c.roleOrGender})` : ''}: Use Myanmar pronoun/honorific "${c.myanmarPronoun || 'natural'}" [Relationship: ${c.relationshipWithOthers || 'N/A'}]`)
-            .join('\n')
-        : '';
-      const terms = Array.isArray(storyContext.keyTerminology)
-        ? storyContext.keyTerminology
-            .map((k: any) => `- "${k.term}" -> "${k.suggestedTranslation}"`)
-            .join('\n')
-        : '';
-
-      storyContextInstruction = `
-PRE-ANALYZED STORY COMPREHENSION & PRONOUN RULES (STRICTLY MANDATORY):
-The entire script dialogue has been pre-read and comprehended to eliminate all context and pronoun errors:
-- Plot Overview: ${summary}
-- Setting & Tone: ${settingTone}
-- Character Pronoun & Role Continuity:
-${chars}
-- Subtitling Directives: ${notes}
-${terms ? `- Story Terminology Rules:\n${terms}` : ''}
-CRITICAL MANDATE: Adhere strictly to the established character relationships and pronouns (ငါ/မင်း, ကျွန်တော်/မင်း, ရှင်/ကျွန်တော်, အစ်ကို/ညီ etc.). Do NOT randomly flip pronouns across subtitle lines!
-`;
-    }
-
-    const systemInstruction = `
-You are a master professional film & video subtitle translator specializing in English to Myanmar (Burmese / မြန်မာဘာသာ) translation for cinema, TV shows, and video subtitles.
-
-CRITICAL NATURAL TRANSLATION PRINCIPLES:
-1. HIGHLY NATURAL & CINEMATIC: Translate into natural, fluent, spoken Myanmar (မြန်မာစကားပြော) as used in professional movie subtitling. Strictly avoid stiff, robotic, or direct word-for-word bookish translations (do NOT use unnatural formal written particles like "သည်", "ပါသည်", "ကျွန်ုပ်" unless specifically instructed).
-2. IDIOMS & COLLOQUIALISMS: Never translate English idioms, slang, or phrasal verbs literally (e.g. "piece of cake" -> "လွယ်လွယ်လေးပါ", "cut it out" -> "တော်လိုက်တော့", "on it" -> "ငါကြည့်လုပ်လိုက်မယ်", "what's up" -> "ဘာထူးလဲ/ဘာဖြစ်လို့လဲ"). Translate their actual intended meaning in natural Myanmar speech.
-3. CONTEXT & DIALOGUE FLOW: Ensure pronoun references (ငါ/နင်, ကျွန်တော်/မင်း, မောင်/မ, အစ်ကို) and tone remain continuous and natural across dialogue lines.
-4. LINE BREAK PRESERVATION: If an input subtitle text contains line breaks (\\n), maintain the multi-line subtitle layout in the translated Burmese output so it renders cleanly on screen.
-5. SUBTITLE PUNCTUATION: Avoid trailing formal Burmese full stops (။) at the end of spoken dialogue subtitle lines to keep screen subtitles clean. Preserve trailing ellipsis (...) or dashes (-) for trailing or interrupted speech.
-6. ${styleInstruction}
-7. ${toneInstruction}
-8. ${speakerInstruction}
-9. ${properNounsInstruction}
-10. ${soundInstruction}
-11. ${honorificInstruction}
-12. ${concisenessInstruction}
-13. ${digitsInstruction}
-14. ${preserveTags ? 'Preserve formatting HTML tags like <i>, </i>, <b>, </b>, <font> exactly around translated text without breaking tags.' : 'Strip HTML formatting tags if unnecessary.'}
-15. Return a JSON object containing a "translations" array. Each array element MUST be an object with "id" (number matching input item id) and "translatedText" (string).
-16. Do NOT combine, merge, or skip any item IDs. Return an entry for EVERY input item provided in the request payload.
-17. SOUND NOISE & PANTING REMOVAL: Automatically OMIT panting sounds (e.g. "pant", "panting", "ဟောဟဲ...", "ဟောဟဲ"), sighs, groans, or non-verbal audio noise expressions from the translation output. If a line consists purely of panting or non-verbal sound noises, output an empty string "" for "translatedText".
-${storyContextInstruction}
-${glossaryPrompt}
-${customPromptNote ? `Additional User Guidelines: ${customPromptNote}` : ''}
-`;
+    const systemInstruction = buildTranslationSystemPrompt(settings);
 
     const promptText = `Please translate the following subtitle items into Myanmar (Burmese):
 ${JSON.stringify(items.map((i: any) => ({ id: i.id, text: i.text })))}`;
@@ -2242,14 +2325,7 @@ ${JSON.stringify(items.map((i: any) => ({ id: i.id, text: i.text })))}`;
     let success = false;
     let lastError: any = null;
 
-    // Supported model fallback order
-    const modelsToTry = [
-      'gemini-2.5-flash',
-      'gemini-3.7-flash',
-      'gemini-3.6-flash',
-      'gemini-flash-latest',
-      'gemini-3.1-flash-lite',
-    ];
+    const modelsToTry = GEMINI_SUPPORTED_MODELS;
 
     // Determine Key Candidates
     let keyCandidates: any[] = [];
@@ -2358,11 +2434,7 @@ ${JSON.stringify(items.map((i: any) => ({ id: i.id, text: i.text })))}`;
           if (candidate.id !== 'user-key') {
             recordKeyRequest(candidate.id, Date.now() - callStart);
           }
-          const isRateLimit =
-            err?.status === 'RESOURCE_EXHAUSTED' ||
-            err?.code === 429 ||
-            (err?.message && (err.message.includes('429') || err.message.includes('quota') || err.message.includes('RESOURCE_EXHAUSTED')));
-
+          const { isRateLimit } = sanitizeGeminiError(err);
           if (isRateLimit) {
             console.warn(`[${modelName}] [Key ${maskApiKey(candidate.key)}] Rate limit hit.`);
           } else {
@@ -2376,16 +2448,13 @@ ${JSON.stringify(items.map((i: any) => ({ id: i.id, text: i.text })))}`;
         const matchedInConfig = usageConfig.geminiKeyPool.find((k: any) => k.id === candidate.id);
         if (matchedInConfig) {
           matchedInConfig.errorCount = (matchedInConfig.errorCount || 0) + 1;
-          const isRateLimit =
-            lastError?.status === 'RESOURCE_EXHAUSTED' ||
-            lastError?.code === 429 ||
-            (lastError?.message && (lastError.message.includes('429') || lastError.message.includes('quota') || lastError.message.includes('RESOURCE_EXHAUSTED')));
+          const { isRateLimit, isKeyInvalid } = sanitizeGeminiError(lastError);
 
           if (isRateLimit) {
             matchedInConfig.status = 'cooldown';
             matchedInConfig.cooldownUntil = Date.now() + 60000; // 1 min cooldown
             matchedInConfig.lastErrorMsg = `429 Rate Limit (Cooldown 1 min)`;
-          } else if (lastError?.message && (lastError.message.includes('API_KEY_INVALID') || lastError.message.includes('400'))) {
+          } else if (isKeyInvalid) {
             matchedInConfig.status = 'error';
             matchedInConfig.lastErrorMsg = 'Invalid API Key';
           }
@@ -2396,19 +2465,17 @@ ${JSON.stringify(items.map((i: any) => ({ id: i.id, text: i.text })))}`;
     }
 
     if (!success) {
-      const isRateLimit =
-        lastError?.status === 'RESOURCE_EXHAUSTED' ||
-        lastError?.code === 429 ||
-        (lastError?.message && (lastError.message.includes('429') || lastError.message.includes('quota') || lastError.message.includes('RESOURCE_EXHAUSTED')));
-
+      const { isRateLimit, friendlyMessage } = sanitizeGeminiError(lastError);
       if (isRateLimit) {
         return res.status(429).json({
           error: 'Gemini API Rate Limit hit. Retrying automatically across Key Pool...',
           isRateLimit: true,
         });
       }
-
-      throw lastError || new Error('API Request failed. Please try again in a few moments.');
+      return res.status(500).json({
+        error: friendlyMessage,
+        details: lastError?.message || undefined,
+      });
     }
 
     let cleanJson = responseText.trim();
@@ -2542,13 +2609,7 @@ ${genre ? `Genre: ${genre}` : ''}
 ${customPromptNote ? `Special instructions: ${customPromptNote}` : ''}
 `;
 
-    const modelsToTry = [
-      'gemini-2.5-flash',
-      'gemini-3.7-flash',
-      'gemini-3.6-flash',
-      'gemini-flash-latest',
-      'gemini-3.1-flash-lite',
-    ];
+    const modelsToTry = GEMINI_SUPPORTED_MODELS;
 
     let responseText = '';
     let success = false;

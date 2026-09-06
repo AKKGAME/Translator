@@ -199,16 +199,21 @@ export function parseSubtitles(
 export function generateSRT(
   items: SubtitleItem[],
   type: 'translated' | 'original' | 'dual' = 'translated',
-  skipEmpty: boolean = true
+  skipEmpty: boolean = true,
+  fallbackToOriginal: boolean = false
 ): string {
   let exportableItems = items;
 
   if (skipEmpty) {
     if (type === 'translated') {
       exportableItems = items.filter((item) => {
-        if (!item.translatedText) return false;
-        const cleaned = cleanSoundEffects(item.translatedText).trim();
-        return cleaned.length > 0;
+        const trans = item.translatedText ? cleanSoundEffects(item.translatedText).trim() : '';
+        if (trans.length > 0) return true;
+        if (fallbackToOriginal) {
+          const orig = item.originalText ? cleanSoundEffects(item.originalText).trim() : '';
+          return orig.length > 0;
+        }
+        return false;
       });
     } else if (type === 'original') {
       exportableItems = items.filter((item) => {
@@ -229,7 +234,8 @@ export function generateSRT(
     .map((item, idx) => {
       let text = '';
       if (type === 'translated') {
-        text = cleanSoundEffects(item.translatedText || '').trim();
+        const trans = cleanSoundEffects(item.translatedText || '').trim();
+        text = trans || (fallbackToOriginal ? cleanSoundEffects(item.originalText || '').trim() : '');
       } else if (type === 'original') {
         text = cleanSoundEffects(item.originalText || '').trim();
       } else {
@@ -249,16 +255,21 @@ export function generateSRT(
 export function generateVTT(
   items: SubtitleItem[],
   type: 'translated' | 'original' | 'dual' = 'translated',
-  skipEmpty: boolean = true
+  skipEmpty: boolean = true,
+  fallbackToOriginal: boolean = false
 ): string {
   let exportableItems = items;
 
   if (skipEmpty) {
     if (type === 'translated') {
       exportableItems = items.filter((item) => {
-        if (!item.translatedText) return false;
-        const cleaned = cleanSoundEffects(item.translatedText).trim();
-        return cleaned.length > 0;
+        const trans = item.translatedText ? cleanSoundEffects(item.translatedText).trim() : '';
+        if (trans.length > 0) return true;
+        if (fallbackToOriginal) {
+          const orig = item.originalText ? cleanSoundEffects(item.originalText).trim() : '';
+          return orig.length > 0;
+        }
+        return false;
       });
     } else if (type === 'original') {
       exportableItems = items.filter((item) => {
@@ -279,7 +290,8 @@ export function generateVTT(
     .map((item, idx) => {
       let text = '';
       if (type === 'translated') {
-        text = cleanSoundEffects(item.translatedText || '').trim();
+        const trans = cleanSoundEffects(item.translatedText || '').trim();
+        text = trans || (fallbackToOriginal ? cleanSoundEffects(item.originalText || '').trim() : '');
       } else if (type === 'original') {
         text = cleanSoundEffects(item.originalText || '').trim();
       } else {
@@ -301,16 +313,21 @@ export function generateVTT(
 export function generateTXT(
   items: SubtitleItem[],
   type: 'translated' | 'original' | 'dual' = 'translated',
-  skipEmpty: boolean = true
+  skipEmpty: boolean = true,
+  fallbackToOriginal: boolean = false
 ): string {
   let exportableItems = items;
 
   if (skipEmpty) {
     if (type === 'translated') {
       exportableItems = items.filter((item) => {
-        if (!item.translatedText) return false;
-        const cleaned = cleanSoundEffects(item.translatedText).trim();
-        return cleaned.length > 0;
+        const trans = item.translatedText ? cleanSoundEffects(item.translatedText).trim() : '';
+        if (trans.length > 0) return true;
+        if (fallbackToOriginal) {
+          const orig = item.originalText ? cleanSoundEffects(item.originalText).trim() : '';
+          return orig.length > 0;
+        }
+        return false;
       });
     } else if (type === 'original') {
       exportableItems = items.filter((item) => {
@@ -331,7 +348,9 @@ export function generateTXT(
     .map((item) => {
       const timeHeader = `[${msToTimeSRT(item.startMs)} - ${msToTimeSRT(item.endMs)}]`;
       if (type === 'translated') {
-        return `${timeHeader}\n${cleanSoundEffects(item.translatedText || '').trim()}`;
+        const trans = cleanSoundEffects(item.translatedText || '').trim();
+        const text = trans || (fallbackToOriginal ? cleanSoundEffects(item.originalText || '').trim() : '');
+        return `${timeHeader}\n${text}`;
       } else if (type === 'original') {
         return `${timeHeader}\n${cleanSoundEffects(item.originalText || '').trim()}`;
       } else {

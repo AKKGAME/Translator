@@ -1143,19 +1143,6 @@ export default function App() {
 
       {/* Top Studio Header */}
       <StudioHeader
-        displayMode={displayMode}
-        onSelectDisplayMode={setDisplayMode}
-        targetLanguage={targetLanguage}
-        onSelectTargetLanguage={setTargetLanguage}
-        onStartTranslate={handleStartTranslate}
-        onCancelTranslate={() => {
-          isCancelledRef.current = true;
-          setIsTranslating(false);
-          setContextAnalysisStep('idle');
-        }}
-        isTranslating={isTranslating}
-        translationProgress={translationProgress}
-        contextAnalysisStep={contextAnalysisStep}
         onExportClick={() => setIsExportOpen(true)}
         onUploadSubtitleClick={() => subtitleInputRef.current?.click()}
         onUploadVideoClick={() => videoInputRef.current?.click()}
@@ -1165,9 +1152,7 @@ export default function App() {
         canUndo={historyIndex > 0}
         canRedo={historyIndex < history.length - 1}
         onOpenShortcuts={() => setIsShortcutsOpen(true)}
-        onOpenSettings={() => setIsSettingsModalOpen(true)}
         onOpenAdmin={handleToggleAdmin}
-        onOpenDonate={() => setIsDonationModalOpen(true)}
         onOpenOnlineSubtitles={() => setIsOnlineSubtitlesOpen(true)}
         hasSubtitles={items.length > 0}
         user={firebaseUser}
@@ -1200,6 +1185,21 @@ export default function App() {
             translationSettings={translationSettings}
             onUpdateTranslationSettings={setTranslationSettings}
             displayMode={displayMode}
+            onSelectDisplayMode={setDisplayMode}
+            targetLanguage={targetLanguage}
+            onSelectTargetLanguage={setTargetLanguage}
+            onStartTranslate={handleStartTranslate}
+            onCancelTranslate={() => {
+              isCancelledRef.current = true;
+              setIsTranslating(false);
+              setContextAnalysisStep('idle');
+            }}
+            isTranslating={isTranslating}
+            translationProgress={translationProgress}
+            onOpenSettings={() => setIsSettingsModalOpen(true)}
+            onOpenAdmin={handleToggleAdmin}
+            user={firebaseUser}
+            profile={userProfile}
             currentTimeMs={currentTimeMs}
             durationSec={durationSec}
             isPlaying={isPlaying}

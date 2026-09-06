@@ -5,16 +5,10 @@ import {
   Undo2,
   Redo2,
   Keyboard,
-  ArrowLeftRight,
   ChevronDown,
   Upload,
   Film,
   FileText,
-  Settings,
-  ShieldAlert,
-  Heart,
-  Play,
-  RotateCcw,
   User,
   Crown,
   Coins,
@@ -25,15 +19,6 @@ import { checkUserPlanStatus } from '../lib/firebase';
 export type DisplayMode = 'bilingual' | 'main' | 'second';
 
 interface StudioHeaderProps {
-  displayMode: DisplayMode;
-  onSelectDisplayMode: (mode: DisplayMode) => void;
-  targetLanguage: string;
-  onSelectTargetLanguage: (lang: string) => void;
-  onStartTranslate: () => void;
-  onCancelTranslate?: () => void;
-  isTranslating: boolean;
-  translationProgress?: { current: number; total: number };
-  contextAnalysisStep?: 'idle' | 'reading' | 'done';
   onExportClick: () => void;
   onUploadSubtitleClick: () => void;
   onUploadVideoClick: () => void;
@@ -43,9 +28,7 @@ interface StudioHeaderProps {
   canUndo?: boolean;
   canRedo?: boolean;
   onOpenShortcuts: () => void;
-  onOpenSettings: () => void;
-  onOpenAdmin: () => void;
-  onOpenDonate: () => void;
+  onOpenAdmin?: () => void;
   onOpenOnlineSubtitles?: () => void;
   hasSubtitles: boolean;
   user?: any;
@@ -55,15 +38,6 @@ interface StudioHeaderProps {
 }
 
 export const StudioHeader: React.FC<StudioHeaderProps> = ({
-  displayMode,
-  onSelectDisplayMode,
-  targetLanguage,
-  onSelectTargetLanguage,
-  onStartTranslate,
-  onCancelTranslate,
-  isTranslating,
-  translationProgress,
-  contextAnalysisStep = 'idle',
   onExportClick,
   onUploadSubtitleClick,
   onUploadVideoClick,
@@ -73,9 +47,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
   canUndo = false,
   canRedo = false,
   onOpenShortcuts,
-  onOpenSettings,
   onOpenAdmin,
-  onOpenDonate,
   onOpenOnlineSubtitles,
   hasSubtitles,
   user,
@@ -95,7 +67,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
 
     if (brandClicksRef.current >= 3) {
       brandClicksRef.current = 0;
-      onOpenAdmin();
+      onOpenAdmin?.();
       return;
     }
 
@@ -114,16 +86,6 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
     document.addEventListener('mousedown', handleClickOutside);
     return () => document.removeEventListener('mousedown', handleClickOutside);
   }, []);
-
-  const handleSwapDisplay = () => {
-    if (displayMode === 'main') {
-      onSelectDisplayMode('second');
-    } else if (displayMode === 'second') {
-      onSelectDisplayMode('main');
-    } else {
-      onSelectDisplayMode('main');
-    }
-  };
 
   return (
     <header className="bg-[#12131c] border-b border-[#202234] text-slate-200 h-13 px-3 sm:px-4 flex items-center justify-between select-none z-30 relative shadow-md">
@@ -166,7 +128,7 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
                   }}
                   className="w-full text-left px-3 py-2 text-slate-200 hover:bg-[#25283d] flex items-center space-x-2.5 transition"
                 >
-                  <Upload className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <Upload className="w-4 h-4 text-purple-400 shrink-0" />
                   <div>
                     <div className="font-semibold">Upload Subtitle File</div>
                     <div className="text-[10px] text-slate-400">SRT သို့မဟုတ် VTT တင်ရန်</div>
@@ -282,143 +244,10 @@ export const StudioHeader: React.FC<StudioHeaderProps> = ({
         </div>
       </div>
 
-      {/* Right Controls Matching Screenshot */}
-      <div className="flex items-center space-x-2 sm:space-x-3 overflow-x-auto no-scrollbar py-1">
-        {/* Display Selector: Bilingual | Main | Second */}
-        <div className="flex items-center space-x-1.5 text-xs text-slate-400">
-          <span className="hidden md:inline text-[11px] font-medium text-slate-400">Display:</span>
-          <div className="flex items-center bg-[#0d0e15] p-0.5 rounded border border-[#26283c]">
-            <button
-              onClick={() => onSelectDisplayMode('bilingual')}
-              className={`px-2 py-1 rounded text-[11px] font-semibold transition ${
-                displayMode === 'bilingual'
-                  ? 'bg-[#6d28d9] text-white shadow-xs'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Bilingual
-            </button>
-            <button
-              onClick={() => onSelectDisplayMode('main')}
-              className={`px-2.5 py-1 rounded text-[11px] font-semibold transition ${
-                displayMode === 'main'
-                  ? 'bg-[#dc2626] text-white shadow-xs'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Main
-            </button>
-            <button
-              onClick={() => onSelectDisplayMode('second')}
-              className={`px-2 py-1 rounded text-[11px] font-semibold transition ${
-                displayMode === 'second'
-                  ? 'bg-[#2563eb] text-white shadow-xs'
-                  : 'text-slate-400 hover:text-slate-200'
-              }`}
-            >
-              Second
-            </button>
-          </div>
-
-          {/* Swap icon */}
-          <button
-            onClick={handleSwapDisplay}
-            className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-[#25283a] rounded transition"
-            title="ဘာသာစကား အမြင် ပြောင်းပြန်လှန်မည်"
-          >
-            <ArrowLeftRight className="w-3.5 h-3.5" />
-          </button>
-        </div>
-
-        {/* Translate Dropdown */}
-        <div className="flex items-center space-x-1.5 text-xs">
-          <span className="hidden lg:inline text-[11px] text-slate-400">Translate:</span>
-          <select
-            value={targetLanguage}
-            onChange={(e) => onSelectTargetLanguage(e.target.value)}
-            className="bg-[#0d0e15] border border-[#26283c] hover:border-[#3b3e5c] text-slate-200 rounded px-2.5 py-1 text-xs font-medium focus:outline-none focus:border-purple-500 cursor-pointer"
-          >
-            <option value="Myanmar (Burmese)">Myanmar (မြန်မာ)</option>
-            <option value="English">English</option>
-            <option value="Japanese">Japanese (日本語)</option>
-            <option value="Korean">Korean (한국어)</option>
-            <option value="Thai">Thai (ไทย)</option>
-            <option value="Chinese">Chinese (中文)</option>
-          </select>
-        </div>
-
-        {/* Start Translation Button (Pink/Salmon button matching screenshot) */}
-        {isTranslating ? (
-          <div className="flex items-center space-x-1">
-            <div className={`px-3 py-1 rounded border text-xs font-bold flex items-center space-x-1.5 shadow-sm ${
-              contextAnalysisStep === 'reading'
-                ? 'bg-purple-950/90 border-purple-600/70 text-purple-200'
-                : 'bg-rose-950/80 border-rose-700/60 text-rose-300'
-            }`}>
-              <div className={`w-3 h-3 border-2 border-t-transparent rounded-full animate-spin ${
-                contextAnalysisStep === 'reading' ? 'border-purple-300' : 'border-rose-300'
-              }`} />
-              <span>
-                {contextAnalysisStep === 'reading'
-                  ? 'Reading Context...'
-                  : translationProgress && translationProgress.total > 0
-                  ? `(${translationProgress.current}/${translationProgress.total})`
-                  : 'Translating...'}
-              </span>
-            </div>
-            {onCancelTranslate && (
-              <button
-                onClick={onCancelTranslate}
-                className="px-2 py-1 rounded bg-red-800 hover:bg-red-700 text-white text-[11px] font-bold transition shadow-sm cursor-pointer"
-                title="ရပ်တန့်မည် (Cancel)"
-              >
-                Stop
-              </button>
-            )}
-          </div>
-        ) : (
-          <button
-            onClick={onStartTranslate}
-            className="px-3 sm:px-3.5 py-1 rounded text-xs font-bold transition flex items-center space-x-1.5 shadow-sm active:scale-95 bg-[#e11d48] hover:bg-[#f43f5e] text-white"
-            title="ဘာသာပြန် စတင်မည် (AI Translate)"
-          >
-            <Play className="w-3 h-3 fill-current" />
-            <span>Start</span>
-          </button>
-        )}
-
-        {/* Auxiliary Quick Nav (Settings, Shortcuts, Admin, Donate) */}
-        <div className="flex items-center space-x-1 border-l border-[#26293d] pl-1.5">
-          <button
-            onClick={onOpenSettings}
-            className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-[#25283a] rounded transition cursor-pointer"
-            title="ဘာသာပြန် ဆက်တင်များ"
-          >
-            <Settings className="w-3.5 h-3.5" />
-          </button>
-
-          <button
-            onClick={onOpenDonate}
-            className="p-1.5 text-rose-400 hover:text-rose-300 hover:bg-rose-500/10 rounded transition cursor-pointer"
-            title="ကူညီလှူဒါန်းရန်"
-          >
-            <Heart className="w-3.5 h-3.5 fill-current" />
-          </button>
-
-          {/* Admin button is hidden from regular users, only visible when logged in as admin */}
-          {(user?.email === 'aungkyawkhant.apple@gmail.com' || profile?.role === 'admin') && (
-            <button
-              onClick={onOpenAdmin}
-              className="p-1.5 text-slate-500 hover:text-emerald-400 hover:bg-[#25283a] rounded transition cursor-pointer"
-              title="Admin Control (Shortcut: Ctrl+Shift+A)"
-            >
-              <ShieldAlert className="w-3.5 h-3.5 text-emerald-500/80" />
-            </button>
-          )}
-        </div>
-
+      {/* Right Controls: User Account / Sign In Profile ONLY */}
+      <div className="flex items-center space-x-2 py-1">
         {/* User Account / Credits Button (Business Model Entry) */}
-        <div className="border-l border-[#26293d] pl-1.5 flex items-center">
+        <div className="flex items-center">
           {user && profile ? (
             <button
               onClick={onOpenUserProfile}

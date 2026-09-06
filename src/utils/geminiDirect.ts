@@ -25,6 +25,13 @@ interface TranslationSettingsInput {
   storyContext?: StoryContextAnalysis | null;
 }
 
+const GEMINI_DIRECT_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-2.5-pro',
+  'gemini-2.0-flash',
+  'gemini-1.5-flash',
+];
+
 /**
  * Validates whether a Gemini API key is functional
  */
@@ -34,13 +41,7 @@ export async function testGeminiApiKey(apiKey: string): Promise<{ success: boole
     return { success: false, error: 'API Key မထည့်သွင်းရသေးပါ' };
   }
 
-  const modelsToTest = [
-    'gemini-2.5-flash',
-    'gemini-3.7-flash',
-    'gemini-3.6-flash',
-    'gemini-flash-latest',
-    'gemini-3.1-flash-lite',
-  ];
+  const modelsToTest = GEMINI_DIRECT_MODELS;
 
   for (const model of modelsToTest) {
     try {
@@ -111,13 +112,7 @@ export async function translateDirectlyViaGemini(
   }
 
   // Supported models to fallback if one model is rate-limited or unavailable
-  const modelsToTry = [
-    'gemini-2.5-flash',
-    'gemini-3.7-flash',
-    'gemini-3.6-flash',
-    'gemini-flash-latest',
-    'gemini-3.1-flash-lite',
-  ];
+  const modelsToTry = GEMINI_DIRECT_MODELS;
 
   // Batch size 25 items per request to reduce request count and stay within TPM/RPM limits
   const CHUNK_SIZE = 25;
@@ -295,13 +290,7 @@ export async function analyzeStoryContextDirectlyViaGemini(
     throw new Error('Gemini API Key ထည့်သွင်းပေးရန် လိုအပ်ပါသည်');
   }
 
-  const modelsToTry = [
-    'gemini-2.5-flash',
-    'gemini-3.7-flash',
-    'gemini-3.6-flash',
-    'gemini-flash-latest',
-    'gemini-3.1-flash-lite',
-  ];
+  const modelsToTry = GEMINI_DIRECT_MODELS;
 
   // Sample items if dialogue is large
   let sampled = items;

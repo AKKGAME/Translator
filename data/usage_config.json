@@ -11,12 +11,12 @@
       "id": "server-env-key-1",
       "key": "AIzaSyDnCpPrUBWzjETWdgTVX646Im-6tS3JHvg",
       "label": "Primary Server Gemini Key (ENV)",
-      "status": "active",
+      "status": "error",
       "cooldownUntil": null,
       "successCount": 0,
-      "errorCount": 0,
+      "errorCount": 1,
       "lastUsedAt": null,
-      "lastErrorMsg": null,
+      "lastErrorMsg": "Invalid API Key",
       "createdAt": "2026-09-03T18:09:24.909Z"
     }
   ],

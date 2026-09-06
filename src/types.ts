@@ -13,7 +13,7 @@ export interface SubtitleItem {
 
 export type SubtitleFormat = 'srt' | 'vtt';
 
-export type TranslationStyle = 'conversational' | 'literary' | 'casual';
+export type TranslationStyle = 'conversational' | 'anime' | 'casual' | 'documentary' | 'literary';
 
 export type ToneStyle = 'neutral' | 'polite' | 'dramatic';
 

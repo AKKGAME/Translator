@@ -1,0 +1,32 @@
+[
+  {
+    "id": "1788692515998_5xu8l",
+    "diskFileName": "1788692515998_5xu8l_naruto_ep02_myanmar.srt",
+    "fileName": "naruto_ep02_myanmar.srt",
+    "format": "srt",
+    "contentMode": "translated",
+    "subtitleCount": 1,
+    "savedAt": "2026-09-06T11:01:55.999Z",
+    "sizeBytes": 95
+  },
+  {
+    "id": "1788692505969_x8n1q",
+    "diskFileName": "1788692505969_x8n1q_naruto_ep01_myanmar.srt",
+    "fileName": "naruto_ep01_myanmar.srt",
+    "format": "srt",
+    "contentMode": "translated",
+    "subtitleCount": 1,
+    "savedAt": "2026-09-06T11:01:45.970Z",
+    "sizeBytes": 83
+  },
+  {
+    "id": "1788692336530_awa64",
+    "diskFileName": "1788692336530_awa64_test.srt",
+    "fileName": "test.srt",
+    "format": "srt",
+    "contentMode": "translated",
+    "subtitleCount": 1,
+    "savedAt": "2026-09-06T10:58:56.531Z",
+    "sizeBytes": 37
+  }
+]

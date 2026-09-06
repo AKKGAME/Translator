@@ -37,6 +37,10 @@ import {
   X,
   CheckCircle2,
   Globe,
+  ArrowLeftRight,
+  ShieldAlert,
+  Sparkles,
+  Sliders,
 } from 'lucide-react';
 import { AnimeSceneCanvas } from './AnimeSceneCanvas';
 import { msToTimeSRT } from '../utils/subtitleParser';
@@ -50,6 +54,17 @@ interface StudioWorkspaceProps {
   translationSettings: TranslationSettings;
   onUpdateTranslationSettings: (settings: TranslationSettings) => void;
   displayMode: 'bilingual' | 'main' | 'second';
+  onSelectDisplayMode?: (mode: 'bilingual' | 'main' | 'second') => void;
+  targetLanguage?: string;
+  onSelectTargetLanguage?: (lang: string) => void;
+  onStartTranslate?: () => void;
+  onCancelTranslate?: () => void;
+  isTranslating?: boolean;
+  translationProgress?: { current: number; total: number } | null;
+  onOpenSettings?: () => void;
+  onOpenAdmin?: () => void;
+  user?: any;
+  profile?: any;
   currentTimeMs: number;
   durationSec: number;
   isPlaying: boolean;
@@ -87,6 +102,17 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
   translationSettings,
   onUpdateTranslationSettings,
   displayMode,
+  onSelectDisplayMode,
+  targetLanguage = 'Myanmar (Burmese)',
+  onSelectTargetLanguage,
+  onStartTranslate,
+  onCancelTranslate,
+  isTranslating = false,
+  translationProgress = null,
+  onOpenSettings,
+  onOpenAdmin,
+  user,
+  profile,
   currentTimeMs,
   durationSec,
   isPlaying,
@@ -640,6 +666,173 @@ export const StudioWorkspace: React.FC<StudioWorkspaceProps> = ({
               </div>
             </div>
           )}
+        </div>
+
+        {/* Translation & Subtitle Quick Action Suite (Under Player) */}
+        <div className="p-3 bg-[#0d0e17] border-t border-[#1c1d2c] flex flex-col gap-2.5">
+          {/* Top Row: Display View Mode + Swap + Target Language */}
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            {/* Display Mode: Bilingual / Main / Second */}
+            <div className="flex items-center space-x-1.5">
+              <span className="text-[11px] font-semibold text-slate-400">မြင်ကွင်း:</span>
+              <div className="flex items-center bg-[#07080d] p-0.5 rounded-lg border border-[#23263b]">
+                <button
+                  type="button"
+                  onClick={() => onSelectDisplayMode?.('bilingual')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
+                    displayMode === 'bilingual'
+                      ? 'bg-purple-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                  title="နှစ်ဘာသာ ပြသမည် (Bilingual)"
+                >
+                  Bilingual
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSelectDisplayMode?.('main')}
+                  className={`px-2.5 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
+                    displayMode === 'main'
+                      ? 'bg-rose-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                  title="ဘာသာပြန်စာသားသာ ပြသမည် (Main: Myanmar)"
+                >
+                  Main (မြန်မာ)
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onSelectDisplayMode?.('second')}
+                  className={`px-2 py-1 rounded-md text-xs font-semibold transition cursor-pointer ${
+                    displayMode === 'second'
+                      ? 'bg-blue-600 text-white shadow-xs'
+                      : 'text-slate-400 hover:text-slate-200'
+                  }`}
+                  title="မူရင်းစာသားသာ ပြသမည် (Original: English/Japanese)"
+                >
+                  Second
+                </button>
+              </div>
+
+              {/* Swap display toggle button */}
+              <button
+                type="button"
+                onClick={() => {
+                  if (displayMode === 'main') onSelectDisplayMode?.('second');
+                  else if (displayMode === 'second') onSelectDisplayMode?.('main');
+                  else onSelectDisplayMode?.('main');
+                }}
+                className="p-1.5 text-slate-400 hover:text-slate-200 hover:bg-[#1a1c2c] rounded-lg border border-transparent hover:border-[#2b2e46] transition cursor-pointer"
+                title="ဘာသာစကား အမြင် ပြောင်းပြန်လှန်မည် (Swap View)"
+              >
+                <ArrowLeftRight className="w-3.5 h-3.5" />
+              </button>
+            </div>
+
+            {/* Target Language Dropdown */}
+            <div className="flex items-center space-x-1.5">
+              <span className="text-[11px] font-semibold text-slate-400">ဘာသာစကား:</span>
+              <select
+                value={targetLanguage}
+                onChange={(e) => onSelectTargetLanguage?.(e.target.value)}
+                className="bg-[#07080d] border border-[#23263b] hover:border-[#3b3e5c] text-slate-200 rounded-lg px-2.5 py-1 text-xs font-medium focus:outline-none focus:border-purple-500 cursor-pointer"
+              >
+                <option value="Myanmar (Burmese)">Myanmar (မြန်မာ)</option>
+                <option value="English">English</option>
+                <option value="Japanese">Japanese (日本語)</option>
+                <option value="Korean">Korean (한국어)</option>
+                <option value="Thai">Thai (ไทย)</option>
+                <option value="Chinese">Chinese (中文)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Bottom Row: AI Start Button + Settings + Admin Panel */}
+          <div className="flex items-center justify-between gap-2 pt-1 border-t border-[#181926]">
+            <div className="flex items-center space-x-2">
+              {/* AI Translate Start / Translating Progress Button */}
+              {isTranslating ? (
+                <div className="flex items-center space-x-1.5">
+                  <div
+                    className={`px-3.5 py-1.5 rounded-lg border text-xs font-bold flex items-center space-x-2 shadow-sm ${
+                      contextAnalysisStep === 'reading'
+                        ? 'bg-purple-950/90 border-purple-600/70 text-purple-200'
+                        : 'bg-rose-950/80 border-rose-700/60 text-rose-300'
+                    }`}
+                  >
+                    <div
+                      className={`w-3.5 h-3.5 border-2 border-t-transparent rounded-full animate-spin ${
+                        contextAnalysisStep === 'reading' ? 'border-purple-300' : 'border-rose-300'
+                      }`}
+                    />
+                    <span>
+                      {contextAnalysisStep === 'reading'
+                        ? 'Reading Story Context...'
+                        : translationProgress && translationProgress.total > 0
+                        ? `Translating (${translationProgress.current}/${translationProgress.total})...`
+                        : 'Translating with Gemini...'}
+                    </span>
+                  </div>
+
+                  {onCancelTranslate && (
+                    <button
+                      type="button"
+                      onClick={onCancelTranslate}
+                      className="px-2.5 py-1.5 rounded-lg bg-red-800/90 hover:bg-red-700 text-white text-xs font-bold transition shadow-sm cursor-pointer"
+                      title="ဘာသာပြန်ခြင်းကို ရပ်တန့်မည် (Cancel)"
+                    >
+                      Stop
+                    </button>
+                  )}
+                </div>
+              ) : (
+                <button
+                  type="button"
+                  onClick={onStartTranslate}
+                  className="px-4 py-1.5 rounded-lg text-xs font-bold transition flex items-center space-x-2 shadow-sm active:scale-95 bg-gradient-to-r from-[#e11d48] to-[#be123c] hover:from-[#f43f5e] hover:to-[#e11d48] text-white cursor-pointer"
+                  title="စာတန်းထိုးများကို AI ဖြင့် ဘာသာပြန်မည် (Start AI Translate)"
+                >
+                  <Sparkles className="w-3.5 h-3.5 fill-current text-rose-200" />
+                  <span>Start AI Translation</span>
+                </button>
+              )}
+
+              {/* Translation Settings Button */}
+              {onOpenSettings && (
+                <button
+                  type="button"
+                  onClick={onOpenSettings}
+                  className="px-2.5 py-1.5 rounded-lg bg-[#141624] hover:bg-[#1d2035] border border-[#262940] hover:border-purple-500/40 text-slate-300 text-xs font-semibold transition flex items-center space-x-1.5 cursor-pointer"
+                  title="ဘာသာပြန် စည်းမျဉ်းများနှင့် စတိုင် ဆက်တင်များ"
+                >
+                  <Settings className="w-3.5 h-3.5 text-purple-400" />
+                  <span className="hidden sm:inline">Settings</span>
+                </button>
+              )}
+            </div>
+
+            {/* Right side tools: Story Context Pre-read status + Admin Icon */}
+            <div className="flex items-center space-x-1.5">
+              {translationSettings.storyContext && (
+                <span className="text-[10px] bg-purple-950/70 border border-purple-800/60 text-purple-300 px-2 py-0.5 rounded-md font-medium hidden md:inline-flex items-center space-x-1">
+                  <CheckCircle2 className="w-3 h-3 text-emerald-400" />
+                  <span>Story Pre-analyzed</span>
+                </span>
+              )}
+
+              {/* Admin Panel button (only for admin email or admin role) */}
+              {onOpenAdmin && (user?.email === 'aungkyawkhant.apple@gmail.com' || profile?.role === 'admin') && (
+                <button
+                  type="button"
+                  onClick={onOpenAdmin}
+                  className="p-1.5 text-slate-400 hover:text-emerald-400 hover:bg-[#1a1d2e] rounded-lg border border-transparent hover:border-emerald-500/30 transition cursor-pointer"
+                  title="Admin Control (Shortcut: Ctrl+Shift+A)"
+                >
+                  <ShieldAlert className="w-4 h-4 text-emerald-400" />
+                </button>
+              )}
+            </div>
+          </div>
         </div>
 
       </div>
